@@ -87,8 +87,8 @@ def build(path=OUT):
         p.draw_line((x, ys[0]), (x, ys[-1]), color=(0, 0, 0), width=0.8)
     for y in ys:
         p.draw_line((xs[0], y), (xs[-1], y), color=(0, 0, 0), width=0.8)
-    cells = [["급부명", "지급사유", "지급금액"], ["암진단자금", "암으로 진단확정", "1,000만원"],
-             ["소액암진단자금", "소액암으로 진단확정", "200만원"]]
+    cells = [["급부명", "지급사유", "지급금액"], ["암진단자금", "피보험자가 암으로 진단확정된 때", "1,000만원"],
+             ["소액암진단자금", "피보험자가 소액암으로 진단확정된 때", "200만원"]]
     for r, row in enumerate(cells):
         for c, t in enumerate(row):
             put(p, xs[c] + 4, ys[r] + 14, t, 9)

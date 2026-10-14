@@ -77,7 +77,7 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(len(self.tables), 1)
         t = self.tables[0]
         self.assertEqual(t["rows"][0], ["급부명", "지급사유", "지급금액"])
-        self.assertEqual(t["rows"][2], ["소액암진단자금", "소액암으로 진단확정", "200만원"])
+        self.assertEqual(t["rows"][2], ["소액암진단자금", "피보험자가 소액암으로 진단확정된 때", "200만원"])
         self.assertEqual(t["node"], "S003|별표1")
         self.assertIn("[표 T0001]", self.nodes["S003|별표1"]["text"])
 

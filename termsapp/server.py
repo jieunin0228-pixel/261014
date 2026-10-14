@@ -1,6 +1,7 @@
 """로컬 웹 서버. 이 PC(127.0.0.1)에서만 접속되며 외부로 데이터를 보내지 않습니다."""
 import os
 import tempfile
+from urllib.parse import quote
 
 import pymupdf
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
@@ -8,7 +9,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .pipeline import read_json
-from .store import EditError, Store
+from . import export
+from .store import CoverageLocked, EditError, Store
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.environ.get("TERMS_DATA_DIR", os.path.join(BASE, "data"))
@@ -175,6 +177,57 @@ def download(doc_id: str, name: str):
     if name not in DOWNLOADS:
         raise HTTPException(404, "내려받을 수 없는 파일입니다")
     return FileResponse(d.path(name), media_type="application/json", filename=name)
+
+
+# ------------------------------------------------------------------ 2단계: 담보 분류
+def coverage_or_409(d):
+    try:
+        return d.coverage()
+    except CoverageLocked as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/docs/{doc_id}/coverage")
+def coverage(doc_id: str):
+    return coverage_or_409(doc_or_404(doc_id))
+
+
+@app.post("/api/docs/{doc_id}/coverage/edit")
+def coverage_edit(doc_id: str, body: dict = Body(...)):
+    d = doc_or_404(doc_id)
+    try:
+        return d.coverage_edit(body.get("op", ""), body, user=body.get("user", ""))
+    except CoverageLocked as e:
+        raise HTTPException(409, str(e))
+    except (EditError, KeyError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/docs/{doc_id}/coverage/rebuild")
+def coverage_rebuild(doc_id: str, body: dict = Body(default={})):
+    d = doc_or_404(doc_id)
+    try:
+        return d.build_coverage(keep_user=bool(body.get("keep_user", True)))
+    except CoverageLocked as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/docs/{doc_id}/coverage/edits")
+def coverage_edits(doc_id: str):
+    return doc_or_404(doc_id).coverage_edits()
+
+
+@app.get("/api/docs/{doc_id}/coverage/export")
+def coverage_export(doc_id: str, fmt: str = "xlsx", selected: bool = False):
+    d = doc_or_404(doc_id)
+    cov = coverage_or_409(d)
+    stem = "담보분류_선택" if selected else "담보분류_전체"
+    if fmt == "json":
+        body = {k: v for k, v in cov.items() if k != "items"} | {"items": export.coverage_items(cov, selected)}
+        return JSONResponse(body, headers={"Content-Disposition": f"attachment; filename=coverage.json; filename*=UTF-8''{quote(stem)}.json"})
+    data = export.coverage_xlsx(cov, selected, d.meta.get("filename", ""))
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=coverage.xlsx; filename*=UTF-8''{quote(stem)}.xlsx"})
 
 
 @app.get("/")

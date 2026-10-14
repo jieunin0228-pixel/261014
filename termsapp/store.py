@@ -4,6 +4,7 @@ import os
 import shutil
 import threading
 
+from . import coverage as coverage_mod
 from . import pipeline, structure
 from .pipeline import now, read_json, write_json
 
@@ -14,7 +15,92 @@ class EditError(Exception):
     pass
 
 
-class Doc:
+class CoverageLocked(Exception):
+    """1단계 변환이 승인되지 않아 2단계를 열 수 없습니다."""
+
+
+class CoverageMixin:
+    """2단계: 담보 분류 트리(coverage.json)와 수정 이력(coverage_edits.json)"""
+
+    COV_OPS = ("move", "rename", "select")
+
+    def _require_approved(self):
+        st = self.status()
+        if not st.get("approved"):
+            raise CoverageLocked("1단계 변환 승인 전에는 담보 분류를 열 수 없습니다. 원본 대조 후 [변환 승인]을 눌러 주십시오.")
+        return st
+
+    def coverage(self):
+        st = self._require_approved()
+        cov = read_json(self.path("coverage.json"))
+        if cov is None:
+            cov = self.build_coverage(st)
+        # 담보 분류를 만든 뒤 1단계가 수정·재승인되었으면 다시 만들기를 권합니다.
+        bf = cov.get("built_from", {})
+        cov["stale"] = bf.get("edits") != len(self.edits())
+        return cov
+
+    def build_coverage(self, st=None, keep_user=True):
+        st = st or self._require_approved()
+        with self.lock:
+            old = read_json(self.path("coverage.json"))
+            cov = coverage_mod.build_coverage(self.terms, self.tables)
+            if old and keep_user:
+                prev = {coverage_mod.item_key(i): i for i in old["items"]}
+                for it in cov["items"]:
+                    o = prev.get(coverage_mod.item_key(it))
+                    if o:
+                        for k in ("name", "major", "middle", "minor", "selected", "moved", "renamed"):
+                            it[k] = o[k]
+            cov["built_from"] = {"approved_at": st.get("approved_at"), "built_at": now(),
+                                 "edits": len(self.edits())}
+            write_json(self.path("coverage.json"), cov)
+            return cov
+
+    def coverage_edit(self, op, args, user=""):
+        with self.lock:
+            cov = self.coverage()
+            if op not in self.COV_OPS:
+                raise EditError(f"알 수 없는 작업: {op}")
+            ids = set(args.get("ids") or ([args["id"]] if args.get("id") else []))
+            items = [i for i in cov["items"] if i["id"] in ids]
+            if not items:
+                raise EditError("담보를 찾지 못했습니다")
+            entry = {"ts": now(), "user": user, "op": op, "ids": sorted(ids)}
+            if op == "move":
+                major = args.get("major")
+                if major not in coverage_mod.MAJORS:
+                    raise EditError("대분류는 사망·장해·진단·입원·치료·기타 중 하나여야 합니다")
+                middle = (args.get("middle") or "").strip() or "기타"
+                entry["before"] = [{k: i[k] for k in ("id", "major", "middle", "minor")} for i in items]
+                for i in items:
+                    i["major"], i["middle"] = major, middle
+                    if (args.get("minor") or "").strip():
+                        i["minor"] = args["minor"].strip()
+                    i["moved"] = True
+                entry["after"] = {"major": major, "middle": middle, "minor": args.get("minor", "")}
+            elif op == "rename":
+                name = (args.get("name") or "").strip()
+                if not name or len(items) != 1:
+                    raise EditError("이름을 바꿀 담보 하나와 새 이름이 필요합니다")
+                entry["before"], entry["after"] = items[0]["name"], name
+                items[0]["name"], items[0]["renamed"] = name, name != items[0]["auto_name"]
+            elif op == "select":
+                for i in items:
+                    i["selected"] = bool(args.get("selected"))
+                entry["after"] = bool(args.get("selected"))
+            write_json(self.path("coverage.json"), cov)
+            if op != "select":  # 선택 상태는 이력에 남기지 않습니다(너무 잦음).
+                hist = read_json(self.path("coverage_edits.json"), [])
+                hist.append(entry)
+                write_json(self.path("coverage_edits.json"), hist)
+            return cov
+
+    def coverage_edits(self):
+        return read_json(self.path("coverage_edits.json"), [])
+
+
+class Doc(CoverageMixin):
     def __init__(self, folder):
         self.folder = folder
         self.lock = threading.RLock()

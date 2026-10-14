@@ -81,8 +81,11 @@ async function openDoc(id) {
   await gotoPage(saved);
 }
 function firstBodyPage() {
+  // 첫 약관 구간의 목차 쪽을 건너뛴 본문 첫 쪽
   const s = state.summary.sections.find((x) => x.kind === "terms");
-  return s ? s.page_start : 1;
+  if (!s) return 1;
+  const toc = s.toc_pages || [];
+  return toc.length ? Math.min(s.page_end, Math.max(...toc) + 1) : s.page_start;
 }
 
 function renderSummary() {
@@ -373,7 +376,164 @@ function switchTab(name) {
   if (name === "sections") renderSections();
   if (name === "history") renderHistory();
   if (name === "files") renderFiles();
+  if (name === "coverage") renderCoverage();
 }
+
+// ------------------------------------------------------------------ 2단계: 담보 분류
+const MAJORS = ["사망", "장해", "진단", "입원", "치료", "기타"];
+const cov = { data: null, open: new Set(["m:사망", "m:장해", "m:진단", "m:입원", "m:치료", "m:기타"]), more: new Set() };
+
+async function renderCoverage() {
+  $("#covLocked").hidden = true; $("#covMain").hidden = true;
+  try {
+    cov.data = await api(`/api/docs/${state.doc}/coverage`);
+  } catch (e) {
+    $("#covLocked").hidden = false;
+    $("#covLocked").innerHTML = `${esc(e.message)}<br><button class="btn" id="covGoReport">품질 보고서 보기</button>`;
+    $("#covGoReport").onclick = () => switchTab("report");
+    return;
+  }
+  $("#covMain").hidden = false;
+  $("#covStale").hidden = !cov.data.stale;
+  drawCoverageTree();
+  const common = cov.data.common_sections || [];
+  $("#covCommon").textContent = common.length ? `특약 공통 조문: ${common.map((c) => `${c.title}(${c.section})`).join(", ")} — 담보가 아니며, 3단계에서 각 담보가 참조하는 조문으로 함께 씁니다.` : "";
+  await drawCovHistory();
+}
+
+async function drawCovHistory() {
+  const hist = await api(`/api/docs/${state.doc}/coverage/edits`);
+  const names = Object.fromEntries(cov.data.items.map((i) => [i.id, i.name]));
+  $("#covHistory").innerHTML = hist.length ? `<table class="list"><tr><th>일시</th><th>검토자</th><th>작업</th><th>담보</th><th>내용</th></tr>${hist.slice().reverse().map((h) =>
+    `<tr><td>${esc(h.ts)}</td><td>${esc(h.user)}</td><td>${h.op === "move" ? "분류 이동" : "이름 수정"}</td><td>${esc(h.ids.map((i) => names[i] || i).join(", "))}</td>
+     <td>${h.op === "move" ? esc(`${h.after.major} > ${h.after.middle}${h.after.minor ? " > " + h.after.minor : ""}`) : esc(`${h.before} → ${h.after}`)}</td></tr>`).join("")}</table>` : '<p class="muted">없음</p>';
+}
+
+function covFiltered() {
+  const q = $("#covSearch").value.trim().replace(/\s/g, "");
+  if (!q) return cov.data.items;
+  return cov.data.items.filter((i) => [i.name, i.minor, i.middle, i.pay_reason, i.group].some((v) => (v || "").replace(/\s/g, "").includes(q)));
+}
+
+function drawCoverageTree() {
+  const items = covFiltered();
+  const searching = !!$("#covSearch").value.trim();
+  const sel = cov.data.items.filter((i) => i.selected).length;
+  $("#covCount").textContent = `담보 ${cov.data.items.length}개 중 ${sel}개 선택${searching ? ` · 검색 결과 ${items.length}개` : ""}`;
+  const tree = {};
+  for (const it of items) ((tree[it.major] ||= {})[it.middle] ||= {})[it.minor] ||= [];
+  for (const it of items) tree[it.major][it.middle][it.minor].push(it);
+  const ids = (list) => list.map((i) => i.id).join(",");
+  const box = (list) => {
+    const n = list.filter((i) => i.selected).length;
+    return `<input type="checkbox" data-ids="${ids(list)}" ${n && n === list.length ? "checked" : ""} data-partial="${n > 0 && n < list.length ? 1 : 0}">`;
+  };
+  const isOpen = (k) => searching || cov.open.has(k);
+  const html = ['<ul class="tree">'];
+  for (const major of MAJORS) {
+    const mids = tree[major]; if (!mids) continue;
+    const all = Object.values(mids).flatMap((m) => Object.values(m).flat());
+    const km = "m:" + major;
+    html.push(`<li class="lv1"><details data-key="${km}" ${isOpen(km) ? "open" : ""}><summary>${box(all)} ${esc(major)}<span class="cnt">${all.length}</span></summary><ul>`);
+    for (const [mid, minors] of Object.entries(mids).sort()) {
+      const list = Object.values(minors).flat();
+      const kd = `d:${major}:${mid}`;
+      html.push(`<li class="lv2"><details data-key="${esc(kd)}" ${isOpen(kd) ? "open" : ""}><summary>${box(list)} ${esc(mid)}<span class="cnt">${list.length}</span></summary><ul>`);
+      for (const [minor, leaves] of Object.entries(minors).sort()) {
+        const kn = `n:${major}:${mid}:${minor}`;
+        html.push(`<li class="lv3"><details data-key="${esc(kn)}" ${isOpen(kn) ? "open" : ""}><summary>${box(leaves)} ${esc(minor)}<span class="cnt">${leaves.length}</span></summary><ul>`);
+        for (const it of leaves) html.push(`<li>${leafHtml(it)}</li>`);
+        html.push("</ul></details></li>");
+      }
+      html.push("</ul></details></li>");
+    }
+    html.push("</ul></details></li>");
+  }
+  html.push("</ul>");
+  $("#covTree").innerHTML = items.length ? html.join("") : '<p class="muted">해당하는 담보가 없습니다.</p>';
+  document.querySelectorAll('#covTree input[data-partial="1"]').forEach((c) => (c.indeterminate = true));
+}
+
+function leafHtml(it) {
+  const src = it.source;
+  const more = cov.more.has(it.id) ? `<div class="more">
+      <div><b>지급사유</b> ${esc(it.pay_reason || "지급기준표 없음")}</div>
+      <div><b>지급금액</b> ${esc(it.pay_amount || "지급기준표에서 읽지 못함 — 원본 확인")}</div>
+      <div><b>분류 근거</b> ${esc(it.reason_note)}</div>
+      <div><b>조문 범위</b> <span class="ref" data-goto="${esc(it.range.first)}">${esc(it.range.first)}</span> ~ <span class="ref" data-goto="${esc(it.range.last)}">${esc(it.range.last)}</span> (${it.range.pages[0]}~${it.range.pages[1]}쪽)</div>
+      <div><b>주요 조문</b> ${it.key_articles.map((c) => `<span class="ref" data-goto="${esc(c)}">${esc(c.split("|")[1])}</span>`).join("") || "없음"}</div>
+      ${it.renamed ? `<div><b>자동 인식 이름</b> ${esc(it.auto_name)}</div>` : ""}</div>` : "";
+  return `<div class="leaf" data-id="${it.id}"><div class="row1"><input type="checkbox" data-ids="${it.id}" ${it.selected ? "checked" : ""}>
+    <span class="nm">${esc(it.name)}</span><span class="amt">${esc((it.pay_amount || "").slice(0, 60))}</span>
+    ${it.moved ? '<span class="tag">이동됨</span>' : ""}${it.renamed ? '<span class="tag">이름 수정</span>' : ""}
+    <span class="spacer"></span>
+    <button class="btn small" data-cov="more">${cov.more.has(it.id) ? "접기" : "자세히"}</button>
+    <button class="btn small" data-cov="rename">이름 수정</button>
+    <button class="btn small" data-cov="move">분류 이동</button>
+    <button class="btn small" data-cov="src" data-page="${src.page}" data-cid="${esc(src.appendix || it.range.first)}">근거 보기</button></div>
+    <div class="why">${esc(it.id)} · ${esc(it.reason_note)}</div>${more}</div>`;
+}
+
+async function covEdit(body) {
+  try {
+    cov.data = Object.assign(await post(`/api/docs/${state.doc}/coverage/edit`, body), { stale: cov.data.stale });
+    drawCoverageTree();
+    if (body.op !== "select") await drawCovHistory();
+  } catch (e) { toast("저장 실패: " + e.message, 5000); }
+}
+
+function covMoveDialog(ids) {
+  if (!ids.length) { toast("이동할 담보를 먼저 선택하십시오."); return; }
+  const first = cov.data.items.find((i) => i.id === ids[0]);
+  const mids = [...new Set(cov.data.items.map((i) => i.middle))].sort();
+  const minors = [...new Set(cov.data.items.map((i) => i.minor))].sort();
+  $("#modalBox").innerHTML = `<h3>담보 ${ids.length}개 분류 이동</h3>
+    <label>대분류 <select id="mvMajor">${MAJORS.map((m) => `<option ${m === first.major ? "selected" : ""}>${m}</option>`).join("")}</select></label>
+    <label>중분류 <input id="mvMid" list="mvMids" value="${esc(first.middle)}"><datalist id="mvMids">${mids.map((m) => `<option value="${esc(m)}">`).join("")}</datalist></label>
+    <label>소분류 <input id="mvMinor" list="mvMinors" placeholder="비우면 그대로 둡니다" size="36"><datalist id="mvMinors">${minors.map((m) => `<option value="${esc(m)}">`).join("")}</datalist></label>
+    <div class="row"><button class="btn" id="mvCancel">취소</button><button class="btn primary" id="mvOk">이동</button></div>`;
+  $("#modal").hidden = false;
+  $("#mvCancel").onclick = () => ($("#modal").hidden = true);
+  $("#mvOk").onclick = () => { $("#modal").hidden = true;
+    covEdit({ op: "move", ids, major: $("#mvMajor").value, middle: $("#mvMid").value, minor: $("#mvMinor").value }); };
+}
+
+$("#covTree").addEventListener("toggle", (ev) => {
+  const d = ev.target; if (!d.dataset || !d.dataset.key || $("#covSearch").value.trim()) return;
+  if (d.open) cov.open.add(d.dataset.key); else cov.open.delete(d.dataset.key);
+}, true);
+$("#covTree").addEventListener("click", async (ev) => {
+  const cb = ev.target.closest("input[type=checkbox][data-ids]");
+  if (cb) {
+    ev.stopPropagation();
+    const ids = cb.dataset.ids.split(",");
+    for (const it of cov.data.items) if (ids.includes(it.id)) it.selected = cb.checked;
+    drawCoverageTree();
+    covEdit({ op: "select", ids, selected: cb.checked });
+    return;
+  }
+  const ref = ev.target.closest("[data-goto]");
+  if (ref) { await gotoCid(ref.dataset.goto); return; }
+  const b = ev.target.closest("[data-cov]"); if (!b) return;
+  const id = b.closest(".leaf").dataset.id;
+  const it = cov.data.items.find((i) => i.id === id);
+  if (b.dataset.cov === "more") { cov.more.has(id) ? cov.more.delete(id) : cov.more.add(id); drawCoverageTree(); }
+  if (b.dataset.cov === "rename") { const n = prompt("새 담보명", it.name); if (n && n.trim() && n.trim() !== it.name) covEdit({ op: "rename", id, name: n.trim() }); }
+  if (b.dataset.cov === "move") covMoveDialog([id]);
+  if (b.dataset.cov === "src") { switchTab("verify"); gotoPage(b.dataset.page, b.dataset.cid); }
+});
+$("#covSearch").addEventListener("input", () => drawCoverageTree());
+$("#covMoveSel").onclick = () => covMoveDialog(cov.data.items.filter((i) => i.selected).map((i) => i.id));
+$("#covOpenAll").onclick = () => { document.querySelectorAll("#covTree details").forEach((d) => { d.open = true; cov.open.add(d.dataset.key); }); };
+$("#covCloseAll").onclick = () => { cov.open.clear(); drawCoverageTree(); };
+const covExport = (fmt) => { location.href = `/api/docs/${state.doc}/coverage/export?fmt=${fmt}&selected=${$("#covSelOnly").checked}`; };
+$("#covXlsx").onclick = () => covExport("xlsx");
+$("#covJson").onclick = () => covExport("json");
+$("#covRebuild").onclick = async () => {
+  if (!confirm("승인된 1단계 결과로 담보를 다시 찾습니다. 이동·이름 수정·선택은 같은 담보에 그대로 이어 붙입니다. 계속할까요?")) return;
+  try { await post(`/api/docs/${state.doc}/coverage/rebuild`, { keep_user: true }); await renderCoverage(); toast("다시 만들었습니다."); }
+  catch (e) { toast("실패: " + e.message, 5000); }
+};
 
 // ------------------------------------------------------------------ 이벤트
 $("#tabs").addEventListener("click", (ev) => { const b = ev.target.closest("button[data-tab]"); if (b) switchTab(b.dataset.tab); });

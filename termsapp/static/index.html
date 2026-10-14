@@ -30,6 +30,7 @@
     <button data-tab="sections">구간(목차)</button>
     <button data-tab="history">수정·승인 이력</button>
     <button data-tab="files">내려받기</button>
+    <button data-tab="coverage" class="stage2">담보 분류 <span class="step">2단계</span></button>
   </nav>
 
   <section id="tab-verify" class="tab on">
@@ -70,6 +71,29 @@
   <section id="tab-sections" class="tab"><div id="sectionsBody"></div></section>
   <section id="tab-history" class="tab"><div id="historyBody"></div></section>
   <section id="tab-files" class="tab"><div id="filesBody"></div></section>
+  <section id="tab-coverage" class="tab">
+    <div id="covLocked" class="locked" hidden></div>
+    <div id="covMain" hidden>
+      <div id="covStale" class="stale" hidden>1단계 변환이 담보 분류를 만든 뒤에 수정·재승인되었습니다. [다시 만들기]를 누르면 바뀐 조문으로 다시 찾고, 이동·이름 수정·선택은 그대로 이어 갑니다.</div>
+      <div class="toolbar">
+        <input id="covSearch" placeholder="담보·특약·지급사유 검색" size="24">
+        <span id="covCount" class="muted"></span>
+        <button class="btn" id="covMoveSel">선택 담보 분류 이동</button>
+        <button class="btn" id="covOpenAll">모두 펼치기</button>
+        <button class="btn" id="covCloseAll">모두 접기</button>
+        <span class="spacer"></span>
+        <label><input type="checkbox" id="covSelOnly"> 선택한 담보만</label>
+        <button class="btn" id="covXlsx">엑셀 내보내기</button>
+        <button class="btn" id="covJson">JSON 내보내기</button>
+        <button class="btn" id="covRebuild">다시 만들기</button>
+      </div>
+      <p class="muted">담보는 특약별 '보험금 지급기준표'의 급부 행에서 찾았고, 표가 없는 특약은 특약 하나를 담보 하나로 두었습니다. 대분류는 급부명(없으면 지급사유)의 낱말로, 중분류는 특약명의 질환·사고군으로, 소분류는 목차의 특약명으로 정했습니다. 분류는 제안이므로 확인 후 옮기십시오.</p>
+      <div id="covTree"></div>
+      <div id="covCommon" class="muted"></div>
+      <h3>분류 수정 이력</h3>
+      <div id="covHistory"></div>
+    </div>
+  </section>
 </main>
 
 <div id="empty" class="empty">
