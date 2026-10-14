@@ -1,0 +1,13 @@
+{
+  "name": "ecs-rule-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "생명보험 약관을 ECS 룰 테이블 행으로 변환하는 웹앱 (더미 데이터 전용)",
+  "scripts": {
+    "build:samples": "node scripts/build-samples.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "xlsx": "0.18.5"
+  }
+}
