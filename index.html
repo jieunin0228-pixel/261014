@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECS 룰 변환기</title>
+<style>
+  :root {
+    --bg: #f3f5f4; --panel: #ffffff; --line: #d5dbd8; --text: #1f2a24; --muted: #66736c;
+    --brand: #2f5d46; --brand-2: #3f7a5c; --accent: #d9822b;
+    --ok: #e3f4e7; --ok-b: #2e8b57; --cut: #fff4cc; --cut-b: #b8860b;
+    --ex: #fde3e3; --ex-b: #c0392b; --end: #e2ecfb; --end-b: #2f6fc6;
+    --sel: #cfe3ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; color: var(--text); background: var(--bg); }
+  header { background: var(--brand); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  header .note { font-size: 12px; opacity: .8; }
+  main { display: grid; grid-template-columns: minmax(300px, 30%) minmax(0, 1fr); gap: 12px; padding: 12px; height: calc(100vh - 46px); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: #e9eeeb; border-radius: 6px 6px 0 0; }
+  .bar h2 { font-size: 13px; margin: 0 auto 0 0; }
+  button, .filebtn { font: inherit; border: 1px solid var(--brand-2); background: #fff; color: var(--brand); padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  button.primary { background: var(--brand-2); color: #fff; }
+  button.warn { border-color: var(--accent); background: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .filebtn input { display: none; }
+  textarea { flex: 1; border: 0; padding: 10px; resize: none; font: 12px/1.6 ui-monospace, Consolas, monospace; outline: none; min-height: 200px; }
+  .status { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; background: #fafbfa; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 4px; border: 1px solid; }
+  .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+  .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 10px; }
+  .tab.on { color: var(--brand); border-bottom-color: var(--brand); font-weight: 700; }
+  .views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view { flex: 1; min-height: 0; overflow: auto; display: none; }
+  .view.on { display: block; }
+  table { border-collapse: collapse; width: max-content; min-width: 100%; }
+  th, td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; white-space: nowrap; }
+  th { position: sticky; top: 0; background: #dfe7e2; z-index: 1; font-weight: 600; }
+  td.wrap { white-space: pre-line; min-width: 220px; max-width: 360px; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; }
+  tr.cat-정상 td { background: var(--ok); }
+  tr.cat-감액 td { background: var(--cut); }
+  tr.cat-면책 td { background: var(--ex); }
+  tr.rule { cursor: pointer; }
+  tr.rule:hover td { filter: brightness(.97); }
+  tr.rule.sel td { background: var(--sel); }
+  .badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-weight: 700; color: #fff; }
+  .b-정상 { background: var(--ok-b); } .b-감액 { background: var(--cut-b); } .b-면책 { background: var(--ex-b); } .b-소멸 { background: var(--end-b); }
+  .b-확인필요 { background: #888; }
+  .detail { border-top: 2px solid var(--brand); max-height: 38%; overflow: auto; padding: 8px 12px; background: #fbfcfb; }
+  .detail h3 { margin: 0 0 6px; font-size: 13px; }
+  .detail blockquote { margin: 4px 0 8px; padding: 6px 10px; background: #fff; border-left: 3px solid var(--brand-2); white-space: pre-wrap; }
+  .detail .ref { font-weight: 700; color: var(--brand); }
+  .detail ul { margin: 4px 0; padding-left: 18px; }
+  .empty { color: var(--muted); padding: 16px; }
+  .cmp-일치 td { background: var(--ok); } .cmp-불일치 td { background: var(--ex); }
+  .cmp-정답지에만 td, .cmp-생성에만 td { background: var(--cut); }
+  .diff { color: var(--ex-b); font-weight: 700; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } section { min-height: 60vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ECS 룰 변환기</h1>
+  <span class="note">약관 → 보험금 심사 룰 테이블 · 더미 데이터 전용 · 모든 처리는 브라우저 안에서만 이루어집니다</span>
+</header>
+<main>
+  <section>
+    <div class="bar">
+      <h2>약관 입력</h2>
+      <button id="btnSample">샘플 약관</button>
+      <label class="filebtn">파일 열기(.txt)<input id="fileTerms" type="file" accept=".txt,.md,text/plain"></label>
+      <button id="btnRun" class="primary">변환</button>
+    </div>
+    <textarea id="terms" spellcheck="false" placeholder="약관 텍스트를 붙여넣거나 .txt 파일을 여세요.&#10;조문은 '제N조(제목)', 항은 ①②, 호는 '1.', 목은 '가.' 형식이어야 합니다."></textarea>
+    <div class="status" id="status">대기 중입니다.</div>
+  </section>
+
+  <section>
+    <div class="bar">
+      <h2>ECS 룰 테이블</h2>
+      <label class="filebtn" id="lblCompare">정답지와 비교<input id="fileAnswer" type="file" accept=".xlsx,.xls"></label>
+      <button id="btnExcel" class="warn" disabled>엑셀 다운로드</button>
+    </div>
+    <div class="summary" id="summary"><span class="chip">변환 전입니다.</span></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--ok);border-color:var(--ok-b)"></i>정상</span>
+      <span><i class="sw" style="background:var(--cut);border-color:var(--cut-b)"></i>감액</span>
+      <span><i class="sw" style="background:var(--ex);border-color:var(--ex-b)"></i>면책</span>
+      <span><i class="sw" style="background:var(--end-b);border-color:var(--end-b)"></i>소멸(계약상태처리 열)</span>
+      <span>🔴 금액 오산출 위험 · 🟡 매핑·중복 점검 · ⚠ 문언상 확정 불가</span>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-view="rules">룰 테이블</button>
+      <button class="tab" data-view="manual">심사자 수기</button>
+      <button class="tab" data-view="missing">근거 없음</button>
+      <button class="tab" data-view="compare">정답지 비교</button>
+    </div>
+    <div class="views">
+      <div class="view on" id="view-rules"><div class="empty">왼쪽에서 약관을 입력하고 [변환]을 누르세요.</div></div>
+      <div class="view" id="view-manual"></div>
+      <div class="view" id="view-missing"></div>
+      <div class="view" id="view-compare"><div class="empty">[정답지와 비교]로 정답지 엑셀을 올리면 결과가 여기에 표시됩니다.</div></div>
+      <div class="detail" id="detail" hidden></div>
+    </div>
+  </section>
+</main>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="src/schema.js"></script>
+<script src="src/engine.js"></script>
+<script src="samples/dummy-terms.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
