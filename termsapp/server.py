@@ -230,6 +230,58 @@ def coverage_export(doc_id: str, fmt: str = "xlsx", selected: bool = False):
                     headers={"Content-Disposition": f"attachment; filename=coverage.xlsx; filename*=UTF-8''{quote(stem)}.xlsx"})
 
 
+# ------------------------------------------------------------------ 3단계: 담보별 요약
+@app.get("/api/docs/{doc_id}/summaries")
+def summaries_status(doc_id: str):
+    d = doc_or_404(doc_id)
+    try:
+        return d.summary_status()
+    except CoverageLocked as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/docs/{doc_id}/summaries/run")
+def summaries_run(doc_id: str, body: dict = Body(...)):
+    d = doc_or_404(doc_id)
+    try:
+        job, _ = d.start_summaries(body.get("ids") or [], force=bool(body.get("force")))
+    except CoverageLocked as e:
+        raise HTTPException(409, str(e))
+    except EditError as e:
+        raise HTTPException(400, str(e))
+    return {k: v for k, v in job.items() if k != "stop"}
+
+
+@app.post("/api/docs/{doc_id}/summaries/stop")
+def summaries_stop(doc_id: str):
+    doc_or_404(doc_id).stop_summaries()
+    return {"ok": True}
+
+
+@app.get("/api/docs/{doc_id}/summaries/{item_id}")
+def summary_one(doc_id: str, item_id: str):
+    d = doc_or_404(doc_id)
+    try:
+        s = d.summary_of(item_id)
+    except EditError as e:
+        raise HTTPException(400, str(e))
+    if not s:
+        raise HTTPException(404, "아직 요약하지 않은 담보입니다")
+    return s
+
+
+@app.get("/api/docs/{doc_id}/summaries-export")
+def summaries_export(doc_id: str, selected: bool = True):
+    d = doc_or_404(doc_id)
+    cov = coverage_or_409(d)
+    items = export.coverage_items(cov, selected)
+    sums = {i["id"]: d.summary_of(i["id"]) for i in items}
+    data = export.summaries_xlsx(items, sums, d.meta.get("filename", ""))
+    stem = "담보별요약_선택" if selected else "담보별요약_전체"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=summaries.xlsx; filename*=UTF-8''{quote(stem)}.xlsx"})
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-store"})

@@ -33,6 +33,7 @@ jobs:
           Write-Output ($s.stats | ConvertTo-Json)
           if ($s.stats.articles -lt 6) { throw "조문 수가 예상보다 적습니다" }
           Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing | Out-Null
+          dist\TermsApp\python\python.exe -c "import anthropic, openpyxl; print('anthropic', anthropic.__version__)"
           Stop-Process -Id $p.Id
       - uses: actions/upload-artifact@v4
         with:

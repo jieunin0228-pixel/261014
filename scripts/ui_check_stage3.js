@@ -1,0 +1,30 @@
+// 3단계 화면 점검: node scripts/ui_check_stage3.js <저장 폴더>  (서버 실행 중, 요약 1건 이상 저장된 상태)
+const { chromium } = require("playwright");
+const out = process.argv[2] || ".";
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://127.0.0.1:8765/");
+  await page.waitForSelector("#docSelect option[value]:not([value=''])", { state: "attached" });
+  const id = await page.$eval("#docSelect option[value]:not([value=''])", (o) => o.value);
+  await page.selectOption("#docSelect", id);
+  await page.waitForSelector(".card");
+  await page.click("#tabs button[data-tab=summary]");
+  await page.waitForSelector("#sumList .it");
+  console.log("키 안내 표시:", !(await page.isHidden("#sumKey")));
+  console.log("목록:", await page.$$eval("#sumList .it", (d) => d.map((x) => x.textContent.replace(/\s+/g, " ").trim())));
+  await page.click("#sumList .it");
+  await page.waitForSelector("#sumCard table");
+  await page.screenshot({ path: `${out}/ui-summary.png`, fullPage: true });
+  console.log("A 행:", await page.$$eval("#sumCard h4 + table tr", (r) => r.length - 1));
+  console.log("격리 상자:", await page.locator(".mismatch-box").count());
+  await page.locator("#sumCard .ev").first().click();
+  await page.waitForSelector(".overlay .quote-hl");
+  await page.waitForTimeout(500);
+  console.log("이동한 쪽:", await page.inputValue("#pageInput"), "강조 박스:", await page.locator(".overlay .quote-hl").count(), "본문 표시:", await page.locator("mark.q").count());
+  await page.screenshot({ path: `${out}/ui-summary-jump.png` });
+  console.log("오류:", errors.length ? errors : "없음");
+  await browser.close();
+})();

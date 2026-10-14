@@ -26,6 +26,19 @@ echo 약관 변환·검증 앱을 시작합니다. 끝내려면 이 창을 닫�
 pause
 """
 
+KEY_BAT = r"""@echo off
+chcp 65001 > nul
+echo Claude API 키를 이 PC 사용자 계정의 환경변수(ANTHROPIC_API_KEY)에 저장합니다.
+echo 키는 파일로 저장되지 않으며, 앱 서버만 읽습니다. 관리자 권한은 필요 없습니다.
+echo.
+set /p KEY=API 키를 붙여넣고 Enter를 누르십시오: 
+if "%KEY%"=="" (echo 입력이 없어 취소했습니다.& pause & exit /b)
+setx ANTHROPIC_API_KEY "%KEY%" > nul
+echo.
+echo 저장했습니다. 앱이 켜져 있으면 검은 창을 닫고 START.bat으로 다시 켜십시오.
+pause
+"""
+
 README = """약관 변환·검증 앱 (설치 불필요판)
 
 1. 이 폴더를 원하는 곳(예: 바탕화면, D:\\약관)에 그대로 둡니다.
@@ -33,7 +46,8 @@ README = """약관 변환·검증 앱 (설치 불필요판)
 3. 끝낼 때는 검은 창을 닫습니다.
 
 - Python이나 다른 프로그램을 설치하지 않습니다. 폴더 안의 python 폴더가 실행용 Python입니다.
-- 변환 결과는 app\\data 폴더에만 저장되며 외부로 보내지 않습니다.
+- 변환 결과는 app\\data 폴더에만 저장됩니다. 1·2단계는 외부로 아무것도 보내지 않습니다.
+- 3단계(담보별 요약)는 외부망 PC에서 Claude API를 씁니다. 처음 한 번 API키설정.bat을 실행해 키를 저장한 뒤 START.bat으로 다시 켜십시오.
 - Windows가 "PC 보호" 창을 띄우면 [추가 정보] → [실행]을 누릅니다. 회사 보안 정책으로 막히면 전산 담당 부서에 이 폴더의 실행 허용을 요청하십시오.
 """
 
@@ -73,6 +87,8 @@ def main():
         f.write(f"python{PY_TAG}.zip\n.\n..\\lib\n..\\app\n")
     with open(os.path.join(APP, "START.bat"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(BAT)
+    with open(os.path.join(APP, "API키설정.bat"), "w", encoding="utf-8", newline="\r\n") as f:
+        f.write(KEY_BAT)
     with open(os.path.join(APP, "읽어보기.txt"), "w", encoding="utf-8-sig", newline="\r\n") as f:
         f.write(README)
     # 5) 압축

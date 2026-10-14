@@ -2,7 +2,7 @@
 // 1단계 검증 화면: 원본 PDF 쪽과 추출 조문을 나란히 대조하고, 수정·승인합니다.
 
 const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const KIND_COLORS = { article: "#1f6feb", paragraph: "#8250df", item: "#1a7f37", subitem: "#0a7d8c",
   appendix: "#b26a00", note: "#8c959f" };
 const KIND_OPTIONS = [["article", "조"], ["paragraph", "항"], ["item", "호"], ["subitem", "목"], ["appendix", "별표"],
@@ -101,7 +101,8 @@ function renderSummary() {
 }
 
 // ------------------------------------------------------------------ 대조 검증
-async function gotoPage(n, focusCid) {
+async function gotoPage(n, focusCid, quote) {
+  state.quote = quote || null;
   const total = state.summary.meta.pages;
   n = Math.max(1, Math.min(total, Number(n) || 1));
   state.page = n; store("page:" + state.doc, n);
@@ -134,6 +135,12 @@ function drawOverlay(hlUid) {
     const color = KIND_COLORS[n.kind] || "#57606a";
     for (const b of n.boxes) {
       parts.push(`<div class="b${n.uid === hlUid ? " hl" : ""}" style="left:${b[0] * scale - 1}px;top:${b[1] * scale - 1}px;width:${(b[2] - b[0]) * scale + 2}px;height:${(b[3] - b[1]) * scale + 2}px;border-color:${color}"></div>`);
+    }
+  }
+  if (state.quote) {
+    for (const q of state.quote.boxes.filter((x) => x.p === v.page.pdf_page)) {
+      const b = q.bbox;
+      parts.push(`<div class="b quote-hl" style="left:${b[0] * scale - 2}px;top:${b[1] * scale - 2}px;width:${(b[2] - b[0]) * scale + 4}px;height:${(b[3] - b[1]) * scale + 4}px"></div>`);
     }
   }
   for (const t of v.tables) {
@@ -185,7 +192,7 @@ function renderText() {
         `<span class="ln">${i > 0 ? `<button class="btn small" data-act="splitAt" data-line="${i}">여기부터</button>` : ""}${esc(l)}</span>`).join("")}</div>
         <div class="actions"><button class="btn" data-act="cancel">취소</button></div>`;
     } else {
-      body = `<div class="txt">${esc(n.text)}</div>
+      body = `<div class="txt">${markQuote(n)}</div>
         <div class="actions">
           <button class="btn" data-act="text">글자 수정</button>
           <button class="btn" data-act="meta">종류·번호·제목</button>
@@ -200,6 +207,20 @@ function renderText() {
   }
   for (const t of v.tables) out.push(tableCard(t));
   $("#textPane").innerHTML = out.join("");
+}
+
+function markQuote(n) {
+  // 3단계 근거에서 넘어온 경우 인용 문장을 강조합니다(공백 차이는 무시).
+  const q = state.quote;
+  if (!q || q.cid !== n.cid) return esc(n.text);
+  const key = q.text.replace(/\s+/g, "").slice(0, 12);
+  const flat = []; const pos = [];
+  for (let i = 0; i < n.text.length; i++) if (!/\s/.test(n.text[i])) { flat.push(n.text[i]); pos.push(i); }
+  const k = flat.join("").indexOf(key);
+  if (k < 0) return esc(n.text);
+  const endFlat = Math.min(pos.length - 1, k + q.text.replace(/\s+/g, "").length - 1);
+  const a = pos[k], b = pos[endFlat] + 1;
+  return esc(n.text.slice(0, a)) + '<mark class="q">' + esc(n.text.slice(a, b)) + "</mark>" + esc(n.text.slice(b));
 }
 
 function tableHtml(rows) {
@@ -377,6 +398,7 @@ function switchTab(name) {
   if (name === "history") renderHistory();
   if (name === "files") renderFiles();
   if (name === "coverage") renderCoverage();
+  if (name === "summary") renderSummaryTab();
 }
 
 // ------------------------------------------------------------------ 2단계: 담보 분류
@@ -534,6 +556,107 @@ $("#covRebuild").onclick = async () => {
   try { await post(`/api/docs/${state.doc}/coverage/rebuild`, { keep_user: true }); await renderCoverage(); toast("다시 만들었습니다."); }
   catch (e) { toast("실패: " + e.message, 5000); }
 };
+
+// ------------------------------------------------------------------ 3단계: 담보별 요약
+const sum = { status: null, current: null, timer: null, tables: null };
+
+async function renderSummaryTab() {
+  $("#sumLocked").hidden = true; $("#sumMain").hidden = true;
+  try {
+    cov.data = await api(`/api/docs/${state.doc}/coverage`);
+    sum.status = await api(`/api/docs/${state.doc}/summaries`);
+  } catch (e) {
+    $("#sumLocked").hidden = false; $("#sumLocked").textContent = e.message; return;
+  }
+  $("#sumMain").hidden = false;
+  const k = $("#sumKey");
+  k.hidden = sum.status.api_key;
+  k.innerHTML = `서버에 Claude API 키(ANTHROPIC_API_KEY 환경변수)가 없어 요약을 실행할 수 없습니다. 설치 불필요판은 폴더의 <b>API키설정.bat</b>을 한 번 실행한 뒤 START.bat으로 앱을 다시 켜십시오. 이미 만든 요약은 그대로 볼 수 있습니다.`;
+  drawSumList(); drawSumProgress();
+  if (sum.current) await openSummary(sum.current);
+}
+
+function sumSelected() { return cov.data.items.filter((i) => i.selected); }
+
+function drawSumList() {
+  const items = sumSelected();
+  if (!items.length) { $("#sumList").innerHTML = '<p class="muted" style="padding:8px">2단계 [담보 분류]에서 요약할 담보를 먼저 선택하십시오.</p>'; return; }
+  $("#sumList").innerHTML = items.map((it) => {
+    const st = sum.status.items[it.id];
+    let badge = '<span class="st">미실행</span>';
+    if (st && st.state === "오류") badge = `<span class="st err" title="${esc(st.error)}">오류</span>`;
+    else if (st) badge = `<span class="st done">완료</span>${st.mismatch ? `<span class="st mis">불일치 ${st.mismatch}</span>` : ""}${st.stale ? '<span class="st stale">재실행 권장</span>' : ""}`;
+    return `<div class="it${sum.current === it.id ? " on" : ""}" data-id="${it.id}"><b>${esc(it.name)}</b>${badge}<div class="muted" style="font-size:11.5px">${esc(it.major)} · ${esc(it.minor)}</div></div>`;
+  }).join("");
+}
+
+function drawSumProgress() {
+  const j = sum.status.job || {};
+  const running = j.total && !j.finished;
+  $("#sumBarWrap").hidden = !running;
+  $("#sumProg").textContent = running ? `${j.done}/${j.total} 처리 중 — ${j.current || ""}` : (j.total ? `마지막 실행: ${j.done}/${j.total}건, 오류 ${Object.keys(j.errors || {}).length}건` : "");
+  if (running) $("#sumBar").style.width = Math.round((100 * j.done) / j.total) + "%";
+  clearTimeout(sum.timer);
+  if (running) sum.timer = setTimeout(async () => {
+    sum.status = await api(`/api/docs/${state.doc}/summaries`);
+    drawSumList(); drawSumProgress();
+    if (sum.current && sum.status.items[sum.current]) await openSummary(sum.current, true);
+  }, 2000);
+}
+
+async function runSummaries(ids, force) {
+  if (!ids.length) { toast("요약할 담보가 없습니다."); return; }
+  if (!confirm(`담보 ${ids.length}개를 Claude(${sum.status.model})로 요약합니다. 담보 하나당 해당 특약 조문(보통 2~4만 자)을 보내며 API 사용료가 발생합니다.${force ? " 이미 만든 요약은 새로 만듭니다." : " 이미 요약한 담보는 건너뜁니다."} 계속할까요?`)) return;
+  try { await post(`/api/docs/${state.doc}/summaries/run`, { ids, force }); }
+  catch (e) { toast("실행하지 못했습니다: " + e.message, 6000); return; }
+  sum.status = await api(`/api/docs/${state.doc}/summaries`);
+  drawSumProgress();
+}
+
+function evChips(evs) {
+  return evs.map((e, i) => `<div><span class="ev${e.matched ? "" : " bad"}" data-ev='${esc(JSON.stringify({ cid: e.node_id, page: e.page, boxes: e.boxes || [], text: e.quote }))}'>
+    ${esc(e.node_id)} · PDF ${e.page ?? "?"}쪽 · 인쇄 ${e.printed_page ?? "-"}쪽${e.matched ? "" : " ✕ " + esc(e.reason)}</span>
+    <div class="quote">“${esc(e.quote)}”</div></div>`).join("");
+}
+
+async function openSummary(id, quiet) {
+  sum.current = id; drawSumList();
+  const it = cov.data.items.find((i) => i.id === id);
+  let s;
+  try { s = await api(`/api/docs/${state.doc}/summaries/${id}`); }
+  catch (e) {
+    const st = sum.status.items[id];
+    $("#sumCard").innerHTML = `<h3>${esc(it.name)}</h3><p class="muted">${st && st.state === "오류" ? "요약 실패: " + esc(st.error) : "아직 요약하지 않았습니다. [선택 담보 요약 실행]을 누르십시오."}</p>`;
+    return;
+  }
+  if (!sum.tables) sum.tables = Object.fromEntries((await api(`/api/docs/${state.doc}/tables`)).map((t) => [t.id, t]));
+  const c = s.card;
+  const statusBadge = (st) => `<span class="badge2 b-${esc(st.split(" ")[0])}">${esc(st)}</span>`;
+  const aRows = c.A.map((f) => `<tr><td>${esc(f.label)}</td><td>${statusBadge(f.status)}</td><td>${esc(f.value)}${f.interpretations.length ? `<div class="hf"><b>가능한 해석</b><br>${f.interpretations.map((x, i) => `${i + 1}) ${esc(x)}`).join("<br>")}</div>` : ""}</td><td>${evChips(f.evidence)}</td></tr>`).join("");
+  const bRows = c.B.map((b) => `<tr><td>${esc(b.category)}</td><td>${esc(b.content)}${b.needs_confirmation ? ` ${statusBadge("해석 확인 필요")}` : ""}${b.interpretations.length ? `<div class="hf">${b.interpretations.map((x, i) => `${i + 1}) ${esc(x)}`).join("<br>")}</div>` : ""}</td><td>${evChips(b.evidence)}</td></tr>`).join("");
+  const tables = c.tables.flatMap((t) => t.table_ids.map((tid) => sum.tables[tid]).filter(Boolean));
+  const srcTable = it.source.table && sum.tables[it.source.table];
+  if (srcTable && !tables.includes(srcTable)) tables.unshift(srcTable);
+  const mism = c.mismatch.map((m) => `<tr><td>${esc(m.section)} · ${esc(m.label || m.category || "")}</td><td>${esc(m.value || m.content || "")}</td><td>${esc(m.mismatch_reason || "")}</td><td>${evChips(m.evidence)}</td></tr>`).join("");
+  $("#sumCard").innerHTML = `<h3>${esc(it.name)} <span class="muted" style="font-size:13px">${esc(it.section_title)}</span></h3>
+    <div class="muted">요약 시각 ${esc(s.at)} · 모델 ${esc(s.meta.model)} · 입력 ${s.input_chars.toLocaleString()}자(조문 ${s.input_ids.length}개)${sum.status.items[id]?.stale ? ' · <b style="color:#b26a00">1단계가 수정되어 다시 실행을 권합니다</b>' : ""}</div>
+    <h4>A. 보장 세부조건</h4><table class="list"><tr><th style="width:150px">항목</th><th style="width:90px">상태</th><th>내용</th><th style="width:34%">근거(누르면 원본으로 이동)</th></tr>${aRows}</table>
+    <h4>B. 전산화 시 주의사항</h4>${bRows ? `<table class="list"><tr><th style="width:150px">구분</th><th>내용</th><th style="width:34%">근거</th></tr>${bRows}</table>` : '<p class="muted">근거가 확인된 주의사항이 없습니다.</p>'}
+    <h4>관련 별표·표 (1단계 추출 원본 그대로)</h4>${tables.length ? tables.map((t) => tableCard(t, true)).join("") : '<p class="muted">없음</p>'}
+    ${c.mismatch.length ? `<div class="mismatch-box"><b>근거 불일치 — 격리됨 (${c.mismatch.length}건)</b><p class="muted">AI가 낸 인용문이 해당 조문 원문에 없거나 근거가 없는 항목입니다. 그대로 쓰지 말고 원문을 직접 확인하십시오.</p>
+      <table class="list"><tr><th>항목</th><th>AI가 낸 내용</th><th>격리 사유</th><th>AI가 낸 근거</th></tr>${mism}</table></div>` : ""}`;
+}
+
+$("#sumList").addEventListener("click", (ev) => { const d = ev.target.closest(".it"); if (d) openSummary(d.dataset.id); });
+$("#sumCard").addEventListener("click", (ev) => {
+  const e = ev.target.closest("[data-ev]");
+  if (e) { const q = JSON.parse(e.dataset.ev); switchTab("verify"); gotoPage(q.page, q.cid, q); return; }
+  const a = ev.target.closest("a[data-page]"); if (a) { ev.preventDefault(); switchTab("verify"); gotoPage(a.dataset.page); }
+});
+$("#sumRun").onclick = () => runSummaries(sumSelected().map((i) => i.id), false);
+$("#sumRerun").onclick = () => { if (sum.current) runSummaries([sum.current], true); else toast("다시 실행할 담보를 왼쪽에서 고르십시오."); };
+$("#sumStop").onclick = async () => { await post(`/api/docs/${state.doc}/summaries/stop`, {}); toast("지금 처리 중인 담보까지 마치고 멈춥니다."); };
+$("#sumXlsx").onclick = () => { location.href = `/api/docs/${state.doc}/summaries-export?selected=true`; };
 
 // ------------------------------------------------------------------ 이벤트
 $("#tabs").addEventListener("click", (ev) => { const b = ev.target.closest("button[data-tab]"); if (b) switchTab(b.dataset.tab); });

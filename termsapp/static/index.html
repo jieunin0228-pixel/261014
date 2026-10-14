@@ -31,6 +31,7 @@
     <button data-tab="history">수정·승인 이력</button>
     <button data-tab="files">내려받기</button>
     <button data-tab="coverage" class="stage2">담보 분류 <span class="step">2단계</span></button>
+    <button data-tab="summary">담보별 요약 <span class="step">3단계</span></button>
   </nav>
 
   <section id="tab-verify" class="tab on">
@@ -92,6 +93,26 @@
       <div id="covCommon" class="muted"></div>
       <h3>분류 수정 이력</h3>
       <div id="covHistory"></div>
+    </div>
+  </section>
+  <section id="tab-summary" class="tab">
+    <div id="sumLocked" class="locked" hidden></div>
+    <div id="sumMain" hidden>
+      <div id="sumKey" class="locked" hidden></div>
+      <div class="toolbar">
+        <button class="btn primary" id="sumRun">선택 담보 요약 실행</button>
+        <button class="btn" id="sumRerun">보고 있는 담보 다시 실행</button>
+        <button class="btn" id="sumStop">중지</button>
+        <span id="sumProg" class="muted"></span>
+        <span class="spacer"></span>
+        <button class="btn" id="sumXlsx">선택 담보 요약 엑셀</button>
+      </div>
+      <div class="bar" id="sumBarWrap" hidden><div id="sumBar"></div></div>
+      <p class="muted">2단계에서 선택한 담보만 요약합니다. 담보마다 그 담보의 조문, 그 조문이 참조하는 조문·표, 용어 정의 조문만 Claude에 보냅니다(약관 전체를 보내지 않음). AI가 낸 근거 인용문은 프로그램이 원문과 문자열로 대조하며, 일치하지 않는 항목은 아래 '근거 불일치' 영역으로 격리합니다.</p>
+      <div class="sum-split">
+        <div id="sumList" class="sum-list"></div>
+        <div id="sumCard" class="sum-card"><p class="muted">왼쪽에서 담보를 고르십시오.</p></div>
+      </div>
     </div>
   </section>
 </main>

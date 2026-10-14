@@ -5,6 +5,7 @@ import shutil
 import threading
 
 from . import coverage as coverage_mod
+from . import summarize as summarize_mod
 from . import pipeline, structure
 from .pipeline import now, read_json, write_json
 
@@ -100,7 +101,76 @@ class CoverageMixin:
         return read_json(self.path("coverage_edits.json"), [])
 
 
-class Doc(CoverageMixin):
+class SummaryMixin:
+    """3단계: 담보별 요약(summaries/<담보ID>.json)과 실행 작업"""
+
+    def _summary_path(self, item_id):
+        if not item_id.isalnum():
+            raise EditError("담보 ID가 올바르지 않습니다")
+        return self.path(os.path.join("summaries", f"{item_id}.json"))
+
+    def summary_of(self, item_id):
+        return read_json(self._summary_path(item_id))
+
+    def summary_status(self):
+        cov = self.coverage()
+        job = getattr(self, "job", None)
+        items = {}
+        for it in cov["items"]:
+            s = self.summary_of(it["id"])
+            if s:
+                items[it["id"]] = {"state": "완료", "mismatch": len(s["card"]["mismatch"]), "at": s.get("at", ""),
+                                   "stale": s.get("terms_edits") != len(self.edits())}
+        errors = (job or {}).get("errors", {})
+        for k, v in errors.items():
+            items.setdefault(k, {"state": "오류", "error": v})
+        return {"api_key": summarize_mod.api_key_present(), "model": summarize_mod.MODEL,
+                "job": {k: v for k, v in (job or {}).items() if k != "stop"}, "items": items}
+
+    def start_summaries(self, ids, force=False, caller=None):
+        cov = self.coverage()
+        if getattr(self, "job", None) and not self.job.get("finished", True):
+            raise EditError("이미 요약을 실행하고 있습니다")
+        if caller is None and not summarize_mod.api_key_present():
+            raise EditError("서버에 ANTHROPIC_API_KEY 환경변수가 없습니다. README의 'API 키 설정'을 따라 설정한 뒤 앱을 다시 실행하십시오.")
+        by_id = {i["id"]: i for i in cov["items"]}
+        todo = [by_id[i] for i in ids if i in by_id]
+        if not force:
+            todo = [i for i in todo if not self.summary_of(i["id"])]
+        job = {"total": len(todo), "done": 0, "current": "", "errors": {}, "finished": False, "stop": False,
+               "started_at": now()}
+        self.job = job
+        os.makedirs(self.path("summaries"), exist_ok=True)
+
+        def run():
+            try:
+                for it in todo:
+                    if job["stop"]:
+                        break
+                    job["current"] = it["name"]
+                    try:
+                        res = summarize_mod.summarize_item(it, self.terms, self.tables, self.pages,
+                                                           cov.get("common_sections", []),
+                                                           **({"caller": caller} if caller else {}))
+                        res.update({"at": now(), "terms_edits": len(self.edits())})
+                        write_json(self._summary_path(it["id"]), res)
+                    except Exception as e:  # 담보 하나의 실패가 나머지를 막지 않게 합니다.
+                        job["errors"][it["id"]] = str(e)
+                    job["done"] += 1
+            finally:
+                job["finished"] = True
+                job["current"] = ""
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return job, t
+
+    def stop_summaries(self):
+        if getattr(self, "job", None):
+            self.job["stop"] = True
+
+
+class Doc(CoverageMixin, SummaryMixin):
     def __init__(self, folder):
         self.folder = folder
         self.lock = threading.RLock()
