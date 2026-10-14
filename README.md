@@ -11,6 +11,14 @@
 | 3단계 | 근거 페이지 뷰어(C 영역), 엑셀·JSON 내보내기 | 예정 |
 | 4단계 | 구약관 PDF 대비 비교 | 예정 |
 
+## 설치 없이 써 보기 (claude.ai 아티팩트판)
+
+설치 없이 브라우저에서 바로 쓸 수 있는 판을 claude.ai 아티팩트로 게시했습니다. 처음 열면 시험용 가상 약관(246쪽)이 자동으로 분석되어 화면 동작을 바로 확인할 수 있습니다.
+
+아티팩트판은 올린 PDF를 어디로도 보내지 않고 그 브라우저 안에서만 읽습니다. 분석 결과와 수정 내용도 그 브라우저의 저장소에만 남기 때문에 다른 PC나 다른 사람의 화면에서는 보이지 않습니다. 브라우저의 사이트 데이터를 지우거나 시크릿 창에서 열면 저장 내용이 사라집니다. 이런 이유로 아티팩트판은 체험과 확인 용도로 쓰고, 실제 업무에는 아래의 로컬 실행판을 쓰는 것을 권합니다. 2단계부터 Claude API를 쓰는 기능은 API 키를 서버에만 두어야 하므로 로컬 실행판에서만 제공할 예정입니다.
+
+아티팩트 페이지는 `node scripts/build-artifact.js`로 `build/artifact.html`을 만들어 게시합니다. 화면과 분석 로직은 로컬 실행판과 같은 파일을 쓰며, 서버와 통신하는 부분(`public/api-server.js`)만 브라우저 안에서 분석하는 부분(`artifact/api-local.js`)으로 바꿉니다. 함께 게시하는 파일은 `sample_policy.pdf` 하나입니다.
+
 ## 설치와 실행
 
 ### 처음 한 번: Node.js 설치
@@ -101,6 +109,8 @@ API 키는 이 PC의 서버 프로그램만 읽으며 브라우저 화면으로�
 npm test                                                  # 자동 테스트(13건): 추출·목차·구간·담보 분류·트리 선택·서버 API
 NODE_PATH=$(npm root -g) npm run build:sample             # 시험용 246쪽 더미 약관 PDF와 정답 파일 재생성(Playwright 필요)
 NODE_PATH=$(npm root -g) npm run check:ui -- <저장폴더>    # 실제 브라우저로 업로드·트리·편집·캐시 점검 후 화면 캡처
+node scripts/build-artifact.js                            # 아티팩트판 페이지(build/artifact.html) 생성
+NODE_PATH=$(npm root -g) node scripts/ui-check-artifact.js <저장폴더>   # 아티팩트판 점검(샘플 자동 분석, 전송 없음, 휴대폰 폭)
 ```
 
 `samples/sample_policy.pdf`는 표지·목차(쪽번호 없음), 보통약관과 특약 28개, 표 형식 지급사유, 별표 3개, 스캔 쪽 1개로 구성된 가상 약관입니다. `samples/sample_expected.json`은 생성기가 함께 만든 정답(구간 제목·시작 쪽, 담보명·대분류)이며, 테스트는 분석 결과를 이 정답과 대조합니다. 실제 약관은 저장소에 넣지 않습니다.
@@ -110,12 +120,15 @@ NODE_PATH=$(npm root -g) npm run check:ui -- <저장폴더>    # 실제 브라�
 | 경로 | 역할 |
 |---|---|
 | `server/index.js` | 로컬 서버(업로드, 진행률, 결과 조회, 수정 저장) |
-| `server/pdf/extract.js` | 쪽별 글자·좌표 추출, 스캔 쪽 판정, 인쇄 쪽번호 인식, 머리글·바닥글 제거 |
+| `server/pdf/extract-core.js` | 쪽별 글자·좌표 추출, 스캔 쪽 판정, 인쇄 쪽번호 인식, 머리글·바닥글 제거(서버·아티팩트 공용) |
+| `server/pdf/extract.js` | 서버에서 pdf.js 를 불러 위 기능을 실행 |
+| `server/analyze/pipeline.js` | 목차·구간·담보·경고를 묶는 분석 순서(서버·아티팩트 공용) |
 | `server/pdf/toc.js` | 목차 인식, 약관·별표 구간 분리, 목차와 본문 짝짓기 |
 | `server/analyze/classify.js` | 담보 추출, 대분류와 분류 근거, 사용자 수정 반영 |
 | `server/analyze/jobs.js` | 분석 작업 실행, 진행률 전송, 결과 캐시 |
 | `server/store.js` | `data` 폴더 파일 저장 |
-| `public/` | 화면(트리, 결과 카드, 편집 창) |
+| `public/` | 화면(트리, 결과 카드, 편집 창), 서버 통신(`api-server.js`) |
+| `artifact/api-local.js` | 아티팩트판의 브라우저 내 분석과 저장 |
 | `samples/` | 시험용 더미 약관과 정답 |
 | `scripts/` | 샘플 생성, 화면 점검 |
 | `test/` | 자동 테스트 |

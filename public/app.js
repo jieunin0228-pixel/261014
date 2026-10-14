@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   const T = window.CoverageTree;
+  const api = window.CoverageApi;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -15,7 +16,7 @@
   $('file').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';
-    if (file) upload(file);
+    if (file) analyzeFile(file);
   });
   $('recent').addEventListener('change', (e) => { if (e.target.value) openDoc(e.target.value); });
 
@@ -25,46 +26,39 @@
     $('progress-msg').textContent = msg;
   }
 
-  function upload(file) {
-    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return alert('PDF 파일만 올릴 수 있습니다.');
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload');
-    xhr.setRequestHeader('Content-Type', 'application/pdf');
-    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) showProgress(e.loaded / e.total * 0.1, `PDF를 올리는 중입니다. (${Math.round(e.loaded / e.total * 100)}%)`); };
-    xhr.onload = () => {
-      let res = {};
-      try { res = JSON.parse(xhr.responseText); } catch { /* 빈 응답 */ }
-      if (xhr.status !== 200) { showProgress(0, res.error || '업로드에 실패했습니다.'); return; }
-      if (res.cached) { showProgress(1, '이미 분석한 PDF입니다. 저장된 결과를 엽니다.'); openDoc(res.id); return; }
-      follow(res.id);
-    };
-    xhr.onerror = () => showProgress(0, '업로드 중 연결이 끊겼습니다. 앱이 실행 중인지 확인해 주십시오.');
-    xhr.send(file);
+  async function analyzeFile(file) {
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { showProgress(0, 'PDF 파일만 올릴 수 있습니다.'); return; }
+    try {
+      showProgress(0, 'PDF를 여는 중입니다.');
+      const res = await api.analyze(file, showProgress);
+      showProgress(1, res.cached ? '이미 분석한 PDF입니다. 저장된 결과를 엽니다.' : '분석이 끝났습니다.');
+      await openDoc(res.id);
+    } catch (err) {
+      showProgress(0, err.message);
+    }
   }
 
-  function follow(id) {
-    const es = new EventSource(`/api/docs/${id}/events`);
-    es.onmessage = (m) => {
-      const ev = JSON.parse(m.data);
-      if (ev.stage === 'extract') showProgress(0.1 + (ev.total ? ev.done / ev.total : 0) * 0.8, ev.message);
-      else if (ev.stage === 'structure') showProgress(0.9 + (ev.done / ev.total) * 0.1, ev.message);
-      else if (ev.stage === 'done') { es.close(); showProgress(1, ev.message); openDoc(id); }
-      else if (ev.stage === 'error') { es.close(); showProgress(0, ev.message); }
-    };
-    es.onerror = () => { es.close(); };
+  async function openSample() {
+    try {
+      showProgress(0, '시험용 가상 약관을 불러오는 중입니다.');
+      const blob = await (await fetch(api.sampleUrl)).blob();
+      await analyzeFile(new File([blob], 'sample_policy.pdf', { type: 'application/pdf' }));
+    } catch (err) {
+      showProgress(0, `샘플 약관을 불러오지 못했습니다. (${err.message})`);
+    }
   }
+  for (const b of document.querySelectorAll('[data-open-sample]')) b.addEventListener('click', openSample);
 
   async function loadRecent() {
-    const list = await (await fetch('/api/docs')).json();
+    let list = [];
+    try { list = await api.list(); } catch { /* 목록 없음 */ }
     $('recent').innerHTML = '<option value="">최근 분석한 약관 열기</option>' + list.filter((d) => d.status === 'done')
       .map((d) => `<option value="${d.id}">${esc(d.lastFileName || d.fileName)} (${d.numPages}쪽, 담보 ${d.coverageCount}개)</option>`).join('');
+    return list;
   }
 
   async function openDoc(id) {
-    const res = await fetch(`/api/docs/${id}`);
-    if (!res.ok) { showProgress(0, '분석 결과를 열지 못했습니다.'); return; }
-    doc = await res.json();
+    try { doc = await api.open(id); } catch (err) { showProgress(0, err.message); return; }
     review = { edits: doc.review.edits || {}, added: doc.review.added || [], selected: doc.review.selected || [] };
     selected = new Set(review.selected);
     $('empty').hidden = true;
@@ -79,7 +73,8 @@
   function renderMeta() {
     const m = doc.meta;
     $('summary').hidden = false;
-    $('summary').innerHTML = `<strong>${esc(m.lastFileName || m.fileName)}</strong>
+    const example = (m.lastFileName || m.fileName) === 'sample_policy.pdf' ? '<span class="example">예시: 시험용 가상 약관</span>' : '';
+    $('summary').innerHTML = `<strong>${esc(m.lastFileName || m.fileName)}</strong>${example}
       <span>전체 ${m.numPages}쪽</span><span>약관 ${m.sectionCount}개</span><span>별표 ${m.appendixCount}개</span>
       <span>자동 추출 담보 ${m.coverageCount}개</span><span>인쇄 쪽번호 인식 ${m.printedPagesFound}쪽</span>`;
     $('warnings').innerHTML = (m.warnings || []).map((w) => {
@@ -254,8 +249,7 @@
   // 수정 내역을 서버에 저장한 뒤 다시 읽어 화면을 맞춥니다(수정 반영은 서버 한 곳에서만 합니다).
   async function refresh() {
     await save();
-    const res = await fetch(`/api/docs/${doc.meta.id}`);
-    const fresh = await res.json();
+    const fresh = await api.open(doc.meta.id);
     doc.coverages = fresh.coverages;
     renderAll();
   }
@@ -266,11 +260,9 @@
   async function save() {
     clearTimeout(timer);
     $('save-state').textContent = '저장 중…';
-    const res = await fetch(`/api/docs/${doc.meta.id}/review`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ edits: review.edits, added: review.added, selected: [...selected] }),
-    });
-    $('save-state').textContent = res.ok ? '이 PC에 저장됨' : '저장 실패';
+    let ok = false;
+    try { ok = await api.save(doc.meta.id, { edits: review.edits, added: review.added, selected: [...selected] }); } catch { ok = false; }
+    $('save-state').textContent = ok ? api.savedLabel : '저장하지 못했습니다. 이 창을 닫으면 수정 내용이 사라집니다.';
   }
 
   // ───────────── 결과 카드 ─────────────
@@ -300,5 +292,11 @@
     }).join('');
   }
 
-  loadRecent();
+  $('storage-note').textContent = api.storageNote;
+  // 처음 연 화면이 비어 있지 않도록, 저장된 약관이 없으면 시험용 가상 약관을 자동으로 엽니다.
+  loadRecent().then((list) => {
+    const done = list.filter((d) => d.status === 'done');
+    if (done.length) openDoc(done[0].id);
+    else if (api.autoOpenSample) openSample();
+  });
 })();

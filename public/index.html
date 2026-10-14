@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>약관 담보 분석기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=Noto+Serif+KR:wght@400&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,6 +13,7 @@
     <h1>약관 담보 분석기</h1>
     <div class="top-actions">
       <label class="btn primary">약관 PDF 올리기<input id="file" type="file" accept="application/pdf,.pdf" hidden></label>
+      <button class="btn" data-open-sample>샘플 약관 열기</button>
       <select id="recent" aria-label="최근 분석한 약관"><option value="">최근 분석한 약관 열기</option></select>
     </div>
   </header>
@@ -51,7 +54,8 @@
 
   <section id="empty" class="empty">
     <p>약관 PDF를 올리면 목차와 본문을 읽어 담보를 사망·장해·진단·입원·치료·기타로 나눠 보여 줍니다.</p>
-    <p class="muted">올린 PDF와 분석 결과는 이 PC의 data 폴더에만 저장됩니다. 같은 PDF를 다시 올리면 저장된 결과를 바로 엽니다.</p>
+    <p class="muted" id="storage-note"></p>
+    <p><button class="btn" data-open-sample>시험용 가상 약관(246쪽)으로 먼저 살펴보기</button></p>
   </section>
 
   <dialog id="edit-dialog">
@@ -73,6 +77,7 @@
   </dialog>
 
   <script src="tree.js"></script>
+  <script src="api-server.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

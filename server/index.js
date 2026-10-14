@@ -9,7 +9,8 @@ try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch { /* .env
 
 const store = require('./store');
 const jobs = require('./analyze/jobs');
-const { applyOverrides, CATEGORIES } = require('./analyze/classify');
+const { CATEGORIES } = require('./analyze/classify');
+const { docView } = require('./analyze/pipeline');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 3000;
@@ -18,6 +19,8 @@ const MAX_UPLOAD = 500 * 1024 * 1024;
 const app = express();
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// 화면의 [샘플 약관 열기]용 시험 PDF
+app.use('/samples', express.static(path.join(__dirname, '..', 'samples')));
 
 // PDF 업로드: 본문을 그대로 받아 파일로 쓰면서 SHA-256 해시를 계산합니다. 같은 해시가 이미 분석돼 있으면 재사용합니다.
 app.post('/api/upload', (req, res, next) => {
@@ -76,12 +79,7 @@ app.get('/api/docs/:id', (req, res) => {
   const id = store.checkId(req.params.id);
   const meta = store.readCache(id, 'meta');
   if (!meta || meta.status !== 'done') return res.status(404).json({ error: '분석 결과가 없습니다.', meta });
-  const structure = store.readCache(id, 'structure');
-  const review = store.readReview(id);
-  const sections = structure.sections.map(({ id: sid, title, kind, appendixNo, startPage, endPage, articles, toc, guessed }) => ({
-    id: sid, title, kind, appendixNo, startPage, endPage, guessed, articleCount: articles.length, toc,
-  }));
-  res.json({ meta, categories: CATEGORIES, sections, coverages: applyOverrides(store.readCache(id, 'coverages'), review), review });
+  res.json(docView(meta, store.readCache(id, 'structure'), store.readCache(id, 'coverages'), store.readReview(id)));
 });
 
 // 사용자 수정·선택 상태 저장. 받은 값 중 정해진 키만 저장합니다.
