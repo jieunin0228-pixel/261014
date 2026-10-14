@@ -8,35 +8,134 @@
   'use strict';
 
   // ───────────────────────── 약관 구간 분리 ─────────────────────────
-  const SECTION_RE = /^[\s【\[<〈《]*([^\n]{0,60}?(?:보통보험약관|보통약관|특별약관|특약))\s*(?:약관)?[\s】\]>〉》]*$/;
-  const APPENDIX_RE = /^[【\[]\s*별표\s*\d+\s*[】\]]\s*\S.{0,40}$/;
-  const isBodyLine = (line) => /^(제\s*\d+\s*조|[①-⑳]|\d+\.|[가-하]\.)/.test(line) || /다\.$/.test(line);
+  // 실제 약관 PDF 는 목차·쪽 머리글·쪽 번호가 섞여 있고, 특약 제목도 "3. 무배당 암진단특약(갱신형) 약관"처럼 다양합니다.
+  // 그래서 (1) 쪽 번호와 여러 번 반복되는 머리글 줄을 지우고, (2) 제목 줄 뒤에 "제1조"가 이어지는 곳,
+  // 또는 조문 번호가 "제1조"로 다시 시작하는 곳을 구간 경계로 봅니다.
+  const ARTICLE_LINE = /^제\s*(\d+)\s*조(?:의\s*\d+)?\s*[(（]/;
+  const FIRST_ARTICLE = /^제\s*1\s*조\s*[(（]/;
+  const TITLE_KEY = /(보통보험약관|보통약관|특별약관|특약|주계약)\s*((\([^)]*\)|[ⅠⅡⅢⅣⅤ]|\d)\s*)*(약관)?$/;
+  const APPENDIX_RE = /^[【\[<]\s*별표\s*\d+\s*[】\]>]\s*\S.{0,40}$/;
+  const PAGE_NO = /^[-–—\s]*\d{1,4}[-–—\s]*$/;
+  const TOC_LEADER = /(\.{3,}|·{3,}|…+|\s{2,})\s*\d{1,4}\s*$/;
+  const isBodyLine = (line) => /^([①-⑳]|[가-하]\.)/.test(line) || ARTICLE_LINE.test(line) || /다\.\)?$/.test(line);
 
-  function sectionTitle(line) {
-    if (isBodyLine(line) || line.length > 80) return null;
-    if (APPENDIX_RE.test(line)) return { title: line, kind: '별표' };
-    const m = line.replace(/\s*\[[^\]]*\]\s*$/, '').match(SECTION_RE);
-    if (!m) return null;
-    return { title: m[1].trim(), kind: /보통/.test(m[1]) ? '보통약관' : '특별약관' };
+  function cleanTitle(line) {
+    return line.replace(/^\d+(?:-\d+)*\.?\s+/, '').replace(/^[【\[<〈《\s]+|[】\]>〉》\s]+$/g, '').trim();
   }
 
-  // 반환: [{ id, title, kind, text, articles }]. 조문이 없는 구간(목차 등)은 별표가 아니면 버립니다.
+  // 제목 줄이면 { title, kind }, 아니면 null
+  function sectionTitle(line) {
+    if (!line || line.length > 70 || isBodyLine(line) || TOC_LEADER.test(line)) return null;
+    if (APPENDIX_RE.test(line)) return { title: line.replace(/^[<]/, '[').replace(/[>](?=\s)/, ']'), kind: '별표' };
+    const t = cleanTitle(line.replace(/\s*\[[^\]]*\]\s*$/, ''));
+    if (!TITLE_KEY.test(t) || /(에\s*따라|경우|합니다|하여|에서|이\s+특약|의\s+체결)/.test(t)) return null;
+    return { title: t, kind: /보통|주계약/.test(t) ? '보통약관' : '특별약관' };
+  }
+
+  function stripNoise(lines) {
+    const count = new Map();
+    for (const l of lines) if (l && l.length <= 60) count.set(l, (count.get(l) || 0) + 1);
+    // 세 번 이상 반복되는 짧은 줄은 쪽 머리글·바닥글로 봅니다(조문·항·호 줄은 제외).
+    return lines.filter((l) => !PAGE_NO.test(l) && !(count.get(l) >= 3 && !isBodyLine(l) && !/^\d+\./.test(l)));
+  }
+
+  // 반환: [{ id, title, kind, text, articles }]
   function splitSections(text) {
+    const lines = stripNoise(String(text).replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean));
+    const nextArticle = (i) => { for (let j = i + 1; j < Math.min(lines.length, i + 13); j++) if (ARTICLE_LINE.test(lines[j])) return lines[j]; return null; };
     const sections = [];
-    let cur = { title: '머리말', kind: '기타', lines: [] };
-    const flush = () => { if (cur.lines.length) sections.push(cur); };
-    for (const raw of String(text).replace(/\r\n?/g, '\n').split('\n')) {
-      const line = raw.trim();
-      const head = line && sectionTitle(line);
-      if (head) { flush(); cur = { ...head, lines: [] }; continue; }
-      cur.lines.push(raw);
+    let cur = { title: '머리말', kind: '기타', lines: [], hasArticle: false };
+    const start = (head) => { if (cur.lines.length) sections.push(cur); cur = { ...head, lines: [], hasArticle: false }; };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const head = sectionTitle(line);
+      if (head && head.kind === '별표' && !TOC_LEADER.test(line)) { start(head); continue; }
+      if (head && head.kind !== '별표') {
+        const next = nextArticle(i);
+        if (next && FIRST_ARTICLE.test(next)) { start(head); continue; }
+        if (!next) continue; // 목차 등 본문이 뒤따르지 않는 제목 줄은 버립니다.
+      }
+      if (FIRST_ARTICLE.test(line) && cur.hasArticle) {
+        // 제목 줄을 못 찾았어도 조문 번호가 제1조로 다시 시작하면 새 구간입니다. 바로 앞의 짧은 줄을 제목으로 씁니다.
+        const prev = cur.lines.length ? cur.lines[cur.lines.length - 1] : '';
+        const titled = prev && prev.length <= 50 && !isBodyLine(prev) && !/^\d+\./.test(prev) && !/^제\s*\d+\s*관/.test(prev);
+        if (titled) cur.lines.pop();
+        start({ title: titled ? cleanTitle(prev) : `구간 ${sections.length + 2}`, kind: titled && /보통|주계약/.test(prev) ? '보통약관' : '특별약관' });
+      }
+      if (ARTICLE_LINE.test(line)) cur.hasArticle = true;
+      cur.lines.push(line);
     }
-    flush();
-    return sections
+    if (cur.lines.length) sections.push(cur);
+
+    // 같은 제목이 연달아 나오면(쪽 머리글이 제목과 같을 때) 하나로 합칩니다.
+    const merged = [];
+    for (const s of sections) {
+      const last = merged[merged.length - 1];
+      if (last && last.title === s.title) last.lines.push(...s.lines);
+      else merged.push(s);
+    }
+    return merged
       .map((s) => ({ title: s.title, kind: s.kind, text: s.lines.join('\n').trim() }))
       .map((s) => ({ ...s, articles: E.splitClauses(s.text) }))
       .filter((s) => s.text && (s.articles.length || s.kind === '별표'))
       .map((s, i) => ({ id: i + 1, ...s }));
+  }
+
+  // ───────────────────────── 담보 목록 ─────────────────────────
+  // 약관 전체에서 "○○보험금·○○진단비·○○수술비·○○입원급여금…" 형태의 담보명을 모두 찾아 대분류로 묶습니다.
+  const BENEFIT_SUFFIX = '(?:보험금|급여금|급부금|진단비|수술비|입원비|입원일당|치료비|간병비|생활자금|자금|연금)';
+  const BENEFIT_TOKEN = new RegExp(`[가-힣A-Za-z0-9ⅠⅡⅢⅣⅤ·]{1,24}?${BENEFIT_SUFFIX}`, 'g');
+  const NOT_BENEFIT = /^(보험금|급여금|해당보험금|약정한보험금|각보험금|이보험금|그보험금|위보험금|다른보험금|사고보험금|해지환급금|책임준비금|기납입보험료|보험료|중도인출금|보험계약대출금)$|^(약정한|해당|다음의|아래의|위의|이|그|각|및|또는|나머지|추가|모든|동일|기|지급|미지급|지급할|받을|받은|청구|청구한)/;
+  const CATEGORIES = ['사망', '진단', '수술', '요양', '입원', '기타'];
+
+  // 한 담보명이 여러 대분류 단어를 품으면 앞쪽 규칙이 우선합니다(예: 암수술비 → 수술, 장기요양진단비 → 요양).
+  function categorize(name) {
+    if (/사망/.test(name)) return '사망';
+    if (/수술/.test(name)) return '수술';
+    if (/입원/.test(name)) return '입원';
+    if (/요양|간병/.test(name)) return '요양';
+    if (/진단|암|뇌|심근|심장|치매|질환/.test(name)) return '진단';
+    return '기타';
+  }
+
+  // 담보를 정의하는 조문(지급사유·보장·지급금액)의 제목
+  const DEFINING_ARTICLE = /지급사유|보장|지급금액|지급기준/;
+
+  // 반환: [{ id, name, category, sectionId, count, sample, shared }] (대분류 순, 처음 나온 순)
+  // 같은 이름의 담보가 여러 특약에서 정의되면(갱신형·비갱신형 등) 특약별로 따로 올립니다(shared=true).
+  function extractCatalog(sections) {
+    const hits = new Map(); // name → Map(sectionId → { count, defined, sample })
+    for (const s of sections) {
+      if (s.kind === '별표') continue;
+      const definedText = s.articles.filter((a) => DEFINING_ARTICLE.test(a.title)).map((a) => a.paragraphs.map(E.paragraphText).join(' ')).join(' ');
+      for (const line of s.text.split('\n')) {
+        for (const m of line.matchAll(BENEFIT_TOKEN)) {
+          const name = m[0];
+          const before = line[m.index - 1];
+          if (before && /[가-힣]/.test(before)) continue; // 더 긴 낱말의 일부(예: "기납입보험료" 안의 "보험료")
+          if (name.length < 4 || NOT_BENEFIT.test(name)) continue;
+          if (!hits.has(name)) hits.set(name, new Map());
+          const bySec = hits.get(name);
+          if (!bySec.has(s.id)) bySec.set(s.id, { count: 0, defined: E.mentions(definedText, name), sample: line.slice(0, 160) });
+          bySec.get(s.id).count += 1;
+        }
+      }
+    }
+    const items = [];
+    for (const [name, bySec] of hits) {
+      const entries = [...bySec.entries()];
+      const defined = entries.filter(([, h]) => h.defined);
+      for (const [sectionId, h] of defined.length ? defined : entries.slice(0, 1)) {
+        items.push({ id: `${name}@${sectionId}`, name, category: categorize(name), sectionId, count: h.count, sample: h.sample, shared: defined.length > 1 });
+      }
+    }
+    // 담보명이 하나도 안 잡힌 특약은 특약 제목 자체를 담보로 올려 빠뜨리지 않게 합니다.
+    for (const s of sections) {
+      if (s.kind !== '특별약관' || items.some((f) => f.sectionId === s.id)) continue;
+      items.push({ id: `${s.title}@${s.id}`, name: s.title, category: categorize(s.title), sectionId: s.id, count: 0, sample: '(특약 제목에서 가져옴)', shared: false });
+    }
+    return CATEGORIES.flatMap((c) => items.filter((f) => f.category === c));
   }
 
   // ───────────────────────── 담보로 분석 대상 고르기 ─────────────────────────
@@ -141,8 +240,16 @@
   };
 
   function instructions(coverage, master) {
+    const target = Array.isArray(coverage)
+      ? `아래 [약관]을 읽고, 다음 [담보 목록]의 급부만 ECS 룰 행으로 변환하십시오. 목록의 담보마다 rows·manual·missing 중 적어도 한 곳에 그 담보명이 나와야 하며, 약관에서 찾지 못한 담보는 missing에 넣습니다.
+[담보 목록]
+${coverage.map((n) => `- ${n}`).join('\n')}`
+      : `아래 [약관]을 읽고, 담보 "${coverage || '전체'}"에 해당하는 급부만 ECS 룰 행으로 변환하십시오. "전체"이면 [약관]의 모든 급부를 변환합니다.`;
     return `당신은 생명보험 보험금 심사 시스템(ECS)의 룰 테이블을 만드는 심사 실무자입니다.
-아래 [약관]을 읽고, 담보 "${coverage || '전체'}"에 해당하는 급부만 ECS 룰 행으로 변환하십시오. "전체"이면 [약관]의 모든 급부를 변환합니다.
+${target}
+
+[주의]
+- 지급금액이 표(급부명·지급사유·지급금액)로 되어 있으면 PDF에서 줄이 섞여 있을 수 있습니다. 급부명과 금액의 짝을 문맥으로 맞추되, 확신할 수 없으면 flags에 warn으로 적습니다.
 
 [변환 규칙]
 1. 급부마다 사고유형(코드표의 사고유형)별로 각각 한 행을 만듭니다. 질병·재해 등 원인이 나뉘면 원인별로 행을 나눕니다.
@@ -175,32 +282,50 @@ ${JSON.stringify(OUTPUT_EXAMPLE)}`;
     })].join('\n');
   }
 
-  // 분석 호출 계획. 구간이 너무 크면 조문 단위로 잘라 여러 번 호출합니다.
-  // 반환: [{ label, sectionId, sectionTitle, prompt, text }]
+  const referencedAppendices = (s, appendices) =>
+    appendices.filter((a) => [...s.text.matchAll(/별표\s*(\d+)/g)].some((m) => new RegExp(`별표\\s*${m[1]}\\b`).test(a.title)));
+
+  // 한 구간의 호출(들). 구간이 너무 크면 조문 단위로 잘라 여러 번 호출합니다.
+  function sectionCalls(s, appendices, coverage, master, names) {
+    const head = instructions(coverage, master);
+    const apxText = appendices.map((a) => `\n\n### ${a.title}\n${a.text}`).join('');
+    const make = (body, part) => {
+      const text = `### ${s.title}\n${body}${apxText}`;
+      return { label: part ? `${s.title} (${part})` : s.title, sectionId: s.id, sectionTitle: s.title, names, text, prompt: `${head}\n\n[약관]\n${text}` };
+    };
+    const whole = make(s.text);
+    if (byteLength(whole.prompt) <= MAX_PROMPT_BYTES) return [whole];
+    const calls = [];
+    let buf = [], n = 1;
+    const budget = MAX_PROMPT_BYTES - byteLength(make('').prompt);
+    for (const a of s.articles) {
+      const t = articleText(a);
+      if (buf.length && byteLength([...buf, t].join('\n')) > budget) { calls.push(make(buf.join('\n'), `${n++}부`)); buf = []; }
+      buf.push(t); // 한 조문이 상한을 넘으면 그 호출이 prompt_too_large 로 실패하고 화면에 표시됩니다.
+    }
+    if (buf.length) calls.push(make(buf.join('\n'), `${n}부`));
+    return calls;
+  }
+
+  // 구간 선택 방식의 호출 계획. 반환: [{ label, sectionId, sectionTitle, names, prompt, text }]
   function planCalls(sections, selectedIds, coverage, master) {
     const chosen = sections.filter((s) => selectedIds.includes(s.id));
     const appendices = chosen.filter((s) => s.kind === '별표');
-    const head = instructions(coverage, master);
-    const calls = [];
-    for (const s of chosen.filter((x) => x.kind !== '별표')) {
-      const apx = appendices.filter((a) => [...s.text.matchAll(/별표\s*(\d+)/g)].some((m) => new RegExp(`별표\\s*${m[1]}\\b`).test(a.title)));
-      const apxText = apx.map((a) => `\n\n### ${a.title}\n${a.text}`).join('');
-      const make = (body, part) => {
-        const text = `### ${s.title}\n${body}${apxText}`;
-        return { label: part ? `${s.title} (${part})` : s.title, sectionId: s.id, sectionTitle: s.title, text, prompt: `${head}\n\n[약관]\n${text}` };
-      };
-      const whole = make(s.text);
-      if (byteLength(whole.prompt) <= MAX_PROMPT_BYTES) { calls.push(whole); continue; }
-      let buf = [], n = 1;
-      const budget = MAX_PROMPT_BYTES - byteLength(make('').prompt);
-      for (const a of s.articles) {
-        const t = articleText(a);
-        if (buf.length && byteLength([...buf, t].join('\n')) > budget) { calls.push(make(buf.join('\n'), `${n++}부`)); buf = []; }
-        buf.push(t); // 한 조문이 상한을 넘으면 그 호출이 prompt_too_large 로 실패하고 화면에 표시됩니다.
-      }
-      if (buf.length) calls.push(make(buf.join('\n'), `${n}부`));
+    return chosen.filter((x) => x.kind !== '별표')
+      .flatMap((s) => sectionCalls(s, referencedAppendices(s, appendices), coverage, master, null));
+  }
+
+  // 담보 선택 방식의 호출 계획: 선택한 담보(id)를 정의 구간별로 묶어, 구간마다 그 구간의 담보 목록으로 호출합니다.
+  function planBenefitCalls(sections, catalog, ids, master) {
+    const groups = new Map();
+    for (const item of catalog.filter((c) => ids.includes(c.id))) {
+      const s = sections.find((x) => x.id === item.sectionId);
+      if (!s) continue;
+      if (!groups.has(s.id)) groups.set(s.id, { s, names: [] });
+      if (!groups.get(s.id).names.includes(item.name)) groups.get(s.id).names.push(item.name);
     }
-    return calls;
+    const appendices = sections.filter((s) => s.kind === '별표');
+    return [...groups.values()].flatMap(({ s, names: ns }) => sectionCalls(s, referencedAppendices(s, appendices), ns, master, ns));
   }
 
   // ───────────────────────── Claude 결과 검증 ─────────────────────────
@@ -299,16 +424,26 @@ ${JSON.stringify(OUTPUT_EXAMPLE)}`;
   }
 
   // 여러 호출의 결과를 합치고 🔴/🟡 표시·행번호를 붙입니다.
-  function finalize(parts, master) {
+  // requested: 사용자가 고른 담보명. 결과 어디에도 나오지 않은 담보는 [근거 없음]에 올려 빠뜨림을 드러냅니다.
+  function finalize(parts, master, requested = []) {
     const rows = parts.flatMap((p) => p.rows);
     E.markRisks(rows, master.variables);
     rows.forEach((r, i) => { r.no = i + 1; });
-    return { rows, manual: parts.flatMap((p) => p.manual), missing: parts.flatMap((p) => p.missing) };
+    const manual = parts.flatMap((p) => p.manual);
+    const missing = parts.flatMap((p) => p.missing);
+    const seen = [...rows.map((r) => r.benefit), ...manual.map((m) => m.subject), ...missing.map((m) => m.subject)].map(squash);
+    for (const name of requested) {
+      const n = squash(name);
+      if (!seen.some((x) => x.includes(n))) {
+        missing.push({ subject: name, ref: '', reason: 'AI 결과에 이 담보가 없습니다. 해당 구간을 다시 분석하거나 수기로 확인하십시오.' });
+      }
+    }
+    return { rows, manual, missing };
   }
 
   return {
-    splitSections, selectSections, sectionTitle,
+    splitSections, selectSections, sectionTitle, extractCatalog, categorize, CATEGORIES,
     MASTER_SHEETS, defaultMaster, parseCodeMaster, codeMasterTemplate,
-    instructions, planCalls, verifyAiResult, finalize, MAX_PROMPT_BYTES,
+    instructions, planCalls, planBenefitCalls, verifyAiResult, finalize, MAX_PROMPT_BYTES,
   };
 });

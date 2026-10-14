@@ -54,9 +54,22 @@
   .muted { color: var(--muted); font-size: 12px; }
   input[type="text"], select { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
   input[type="text"] { flex: 1; min-width: 120px; }
-  .sections { max-height: 160px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); }
-  .sec { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  .sec:last-child { border-bottom: 0; }
+  .allbox { font-weight: 700; display: flex; gap: 4px; align-items: center; cursor: pointer; }
+  .catalog { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); }
+  .cat { border-bottom: 1px solid var(--line); }
+  .cat:last-child { border-bottom: 0; }
+  .cat > summary { display: flex; gap: 6px; align-items: center; padding: 4px 8px; cursor: pointer; font-weight: 700; background: var(--head); list-style: none; }
+  .cat > summary::-webkit-details-marker { display: none; }
+  .cat > summary::before { content: "▸"; color: var(--muted); width: 10px; }
+  .cat[open] > summary::before { content: "▾"; }
+  .cat > summary small { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .cat.empty-cat > summary { opacity: .55; }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 10px; padding: 4px 8px 6px 26px; }
+  .item { display: flex; gap: 5px; align-items: baseline; padding: 2px 0; cursor: pointer; min-width: 0; }
+  .item .n { min-width: 0; overflow-wrap: anywhere; }
+  .item small { color: var(--muted); }
+  .secinfo summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .sec { display: flex; gap: 6px; align-items: baseline; padding: 2px 8px; font-size: 12px; }
   .sec .kind { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--head); color: var(--muted); white-space: nowrap; }
   .sec .t { flex: 1; min-width: 0; }
   .sec small { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -112,23 +125,27 @@
     </div>
     <div class="controls">
       <div class="row">
-        <label for="coverage" class="lbl">담보</label>
-        <input id="coverage" type="text" value="전체" placeholder="전체 또는 수술비, 암진단">
-        <button id="btnFind">대상 찾기</button>
-      </div>
-      <div class="row">
         <span class="lbl">코드표</span>
         <span id="masterInfo" class="muted grow"></span>
         <label class="filebtn">올리기<input id="fileMaster" type="file" accept=".xlsx,.xls"></label>
         <button id="btnTemplate">양식</button>
       </div>
-      <div class="sections" id="sections" aria-label="분석 대상 구간"></div>
+      <div class="row">
+        <label class="allbox"><input type="checkbox" id="catAll"> 전체 담보</label>
+        <span id="pickInfo" class="muted grow"></span>
+        <input id="benefitFilter" type="text" placeholder="담보 검색" aria-label="담보 검색">
+      </div>
+      <div class="catalog" id="catalog" aria-label="담보 선택"></div>
+      <details class="secinfo">
+        <summary id="secSummary">약관 구간</summary>
+        <div id="sections"></div>
+      </details>
       <div class="row">
         <select id="tier" aria-label="분석 방식">
           <option value="complex">정확도 우선</option>
           <option value="default">속도 우선</option>
         </select>
-        <button id="btnAi" class="primary">AI 분석</button>
+        <button id="btnAi" class="primary">선택 담보 AI 분석</button>
         <button id="btnStop" hidden>중지</button>
         <button id="btnRun" title="보통약관 사망 급부만 규칙으로 변환합니다(더미 약관 문형 전용)">규칙 엔진(사망)</button>
       </div>

@@ -9,7 +9,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
   const MASTER_KEY = 'ecs-code-master';
-  const state = { result: null, compare: null, selected: null, sections: [], master: loadMaster(), meta: null, ctl: null };
+  const state = { result: null, compare: null, selected: null, sections: [], catalog: [], picked: new Set(), master: loadMaster(), meta: null, ctl: null };
 
   function setStatus(msg) { $('status').textContent = msg; }
 
@@ -45,28 +45,64 @@
     await saveBook(book, 'ECS_코드표_양식.xlsx');
   }
 
-  // ───────── 약관 구간 ─────────
+  // ───────── 약관 구간·담보 목록 ─────────
   function resplit() {
     state.sections = A.splitSections($('terms').value);
-    selectByCoverage();
+    state.catalog = A.extractCatalog(state.sections);
+    const ids = new Set(state.catalog.map((c) => c.id));
+    state.picked = new Set([...state.picked].filter((id) => ids.has(id)));
+    renderCatalog();
+    renderSectionInfo();
   }
 
-  function selectedIds() {
-    return [...document.querySelectorAll('#sections input:checked')].map((x) => Number(x.dataset.id));
-  }
-
-  function renderSections(checked) {
-    const box = $('sections');
-    if (!state.sections.length) { box.innerHTML = '<div class="empty">구간을 찾지 못했습니다. 조문(제N조) 형식인지 확인하세요.</div>'; return; }
+  function renderSectionInfo() {
     const size = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)}만자` : `${n.toLocaleString()}자`);
-    box.innerHTML = state.sections.map((s) => `<label class="sec"><input type="checkbox" data-id="${s.id}"${checked.includes(s.id) ? ' checked' : ''}>
-      <span class="kind">${esc(s.kind)}</span><span class="t">${esc(s.title)}</span><small>${s.kind === '별표' ? '' : `조문 ${s.articles.length} · `}${size(s.text.length)}</small></label>`).join('');
+    $('secSummary').textContent = `약관 구간 ${state.sections.length}개 보기`;
+    $('sections').innerHTML = state.sections.map((s) => `<div class="sec"><span class="kind">${esc(s.kind)}</span><span class="t">${esc(s.title)}</span><small>${s.kind === '별표' ? '' : `조문 ${s.articles.length} · `}${size(s.text.length)}</small></div>`).join('')
+      || '<div class="empty">구간을 찾지 못했습니다. 조문(제N조) 형식인지 확인하세요.</div>';
   }
 
-  function selectByCoverage() {
-    const ids = A.selectSections(state.sections, $('coverage').value);
-    renderSections(ids);
-    return ids;
+  function renderCatalog() {
+    const box = $('catalog');
+    if (!state.catalog.length) {
+      box.innerHTML = '<div class="empty">담보를 찾지 못했습니다. PDF에서 글자가 제대로 추출됐는지 왼쪽 아래 원문을 확인하세요.</div>';
+      updatePickInfo();
+      return;
+    }
+    const q = $('benefitFilter').value.trim();
+    const titleOf = (id) => (state.sections.find((s) => s.id === id) || {}).title || '';
+    box.innerHTML = A.CATEGORIES.map((cat) => {
+      const all = state.catalog.filter((c) => c.category === cat);
+      const items = all.filter((c) => !q || c.name.includes(q));
+      const on = all.filter((c) => state.picked.has(c.id)).length;
+      // 같은 이름이 여러 특약에 있을 때만 특약명을 붙이고, 나머지는 마우스를 올리면 특약명·원문이 보입니다.
+      const list = items.map((c) => `<label class="item" title="${esc(`${titleOf(c.sectionId)}\n${c.sample}`)}"><input type="checkbox" data-id="${esc(c.id)}"${state.picked.has(c.id) ? ' checked' : ''}>
+        <span class="n">${esc(c.name)}${c.shared ? ` <small>(${esc(titleOf(c.sectionId).replace(/\s*약관$/, ''))})</small>` : ''}</span></label>`).join('');
+      return `<details class="cat${all.length ? '' : ' empty-cat'}" ${all.length ? 'open' : ''}><summary>
+        <input type="checkbox" data-cat="${cat}"${all.length && on === all.length ? ' checked' : ''}${all.length ? '' : ' disabled'} aria-label="${cat} 전체 선택">
+        ${cat} <small>${on}/${all.length}</small></summary>${items.length ? `<div class="items">${list}</div>` : ''}</details>`;
+    }).join('');
+    for (const cb of box.querySelectorAll('input[data-cat]')) {
+      const all = state.catalog.filter((c) => c.category === cb.dataset.cat);
+      const on = all.filter((c) => state.picked.has(c.id)).length;
+      cb.indeterminate = on > 0 && on < all.length;
+    }
+    updatePickInfo();
+  }
+
+  function updatePickInfo() {
+    const n = state.picked.size, total = state.catalog.length;
+    const all = $('catAll');
+    all.checked = total > 0 && n === total;
+    all.indeterminate = n > 0 && n < total;
+    const calls = n ? A.planBenefitCalls(state.sections, state.catalog, [...state.picked], state.master).length : 0;
+    $('pickInfo').textContent = total ? `담보 ${total}개 중 ${n}개 선택${n ? ` · Claude 호출 ${calls}회 예정` : ''}` : '';
+    $('btnAi').disabled = !n || !!state.ctl;
+  }
+
+  function pick(ids, on) {
+    for (const id of ids) on ? state.picked.add(id) : state.picked.delete(id);
+    renderCatalog();
   }
 
   // ───────── 분석 실행 ─────────
@@ -85,14 +121,8 @@
     showTab('rules');
   }
 
-  function textOfSelection() {
-    const ids = selectedIds();
-    const chosen = state.sections.filter((s) => ids.includes(s.id));
-    return chosen.length ? chosen.map((s) => `${s.title}\n${s.text}`).join('\n\n') : $('terms').value;
-  }
-
   function runRules() {
-    const text = textOfSelection();
+    const text = $('terms').value;
     if (!text.trim()) { setStatus('약관 텍스트가 비어 있습니다.'); return; }
     const r = E.generateRules(text);
     show(r, { mode: '규칙 엔진(사망)', coverage: '사망', master: '기본(더미) 코드표' },
@@ -114,9 +144,11 @@
     if (!inArtifact) { setStatus('AI 분석은 claude.ai 아티팩트에서 열었을 때만 동작합니다. 로컬에서는 [규칙 엔진(사망)]을 쓰세요.'); return; }
     const sample = await window.claude.use('sample');
     if (!sample) { setStatus('이 화면에서는 Claude 분석을 쓸 수 없습니다.'); return; }
-    const coverage = $('coverage').value.trim() || '전체';
-    const calls = A.planCalls(state.sections, selectedIds(), coverage, state.master);
-    if (!calls.length) { setStatus('분석할 약관 구간을 하나 이상 고르세요(별표만으로는 분석할 수 없습니다).'); return; }
+    const ids = [...state.picked];
+    const names = [...new Set(state.catalog.filter((c) => state.picked.has(c.id)).map((c) => c.name))];
+    const calls = A.planBenefitCalls(state.sections, state.catalog, ids, state.master);
+    if (!calls.length) { setStatus('분석할 담보를 하나 이상 고르세요.'); return; }
+    const coverage = ids.length === state.catalog.length ? `전체(${ids.length}개)` : names.join(', ');
 
     const ctl = new AbortController();
     state.ctl = ctl;
@@ -141,9 +173,9 @@
       }
     }
     state.ctl = null;
-    $('btnAi').disabled = false;
     $('btnStop').hidden = true;
-    const r = A.finalize(parts, state.master);
+    updatePickInfo();
+    const r = A.finalize(parts, state.master, stopped ? [] : names);
     show(r, { mode: `AI 분석(${$('tier').selectedOptions[0].text})`, coverage, master: state.master.source, sections: calls.map((c) => c.label).join(', ') },
       `${stopped ? `${stopped} ` : ''}AI 분석: ${parts.length}/${calls.length}개 구간에서 룰 ${r.rows.length}행, 심사자 수기 ${r.manual.length}건, 근거 없음 ${r.missing.length}건입니다. 모든 행은 원문 인용과 코드표로 검증했습니다.`);
   }
@@ -321,7 +353,7 @@
   $('terms').addEventListener('input', () => { clearTimeout(resplitTimer); resplitTimer = setTimeout(resplit, 400); });
   $('btnSample').addEventListener('click', () => {
     loadText(`${window.DUMMY_TERMS}\n${window.DUMMY_RIDERS}`);
-    setStatus('샘플(더미) 약관을 불러왔습니다. 담보를 입력하고 [대상 찾기] 후 [AI 분석]을 누르세요.');
+    setStatus(`샘플(더미) 약관에서 담보 ${state.catalog.length}개를 찾았습니다. 분석할 담보를 고르고 [선택 담보 AI 분석]을 누르세요.`);
   });
   $('fileTerms').addEventListener('change', async (e) => {
     const f = e.target.files[0];
@@ -330,16 +362,18 @@
     try {
       const { text, note } = await readTermsFile(f);
       loadText(text);
-      if (!/OCR/.test($('status').textContent)) setStatus(`${f.name}(${note})에서 구간 ${state.sections.length}개를 찾았습니다. 담보를 입력하고 [대상 찾기]를 누르세요.`);
+      if (!/OCR/.test($('status').textContent)) setStatus(`${f.name}(${note})에서 구간 ${state.sections.length}개, 담보 ${state.catalog.length}개를 찾았습니다. 분석할 담보를 고르세요.`);
     } catch (err) {
       setStatus(`${f.name} 을(를) 읽지 못했습니다: ${err && err.message ? err.message : err}`);
     }
   });
-  $('btnFind').addEventListener('click', () => {
-    const ids = selectByCoverage();
-    setStatus(ids.length ? `담보 "${$('coverage').value}"에 해당하는 구간 ${ids.length}개를 골랐습니다. 목록에서 더하거나 뺄 수 있습니다.` : `담보 "${$('coverage').value}"에 해당하는 구간을 찾지 못했습니다. 목록에서 직접 고르세요.`);
+  $('catalog').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.id) pick([t.dataset.id], t.checked);
+    else if (t.dataset.cat) pick(state.catalog.filter((c) => c.category === t.dataset.cat).map((c) => c.id), t.checked);
   });
-  $('coverage').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnFind').click(); });
+  $('catAll').addEventListener('change', (e) => pick(state.catalog.map((c) => c.id), e.target.checked));
+  $('benefitFilter').addEventListener('input', renderCatalog);
   $('fileMaster').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     e.target.value = '';
@@ -359,20 +393,20 @@
     applyCompare(f.name, XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: '' }));
   });
   $('tabs').addEventListener('click', (e) => { if (e.target.dataset.view) showTab(e.target.dataset.view); });
-  const pick = (tr) => {
+  const selectRow = (tr) => {
     state.selected = Number(tr.dataset.no);
     for (const x of document.querySelectorAll('tr.rule')) x.classList.toggle('sel', x === tr);
     renderDetail();
   };
-  $('view-rules').addEventListener('click', (e) => { const tr = e.target.closest('tr.rule'); if (tr) pick(tr); });
-  $('view-rules').addEventListener('keydown', (e) => { const tr = e.target.closest('tr.rule'); if (tr && e.key === 'Enter') pick(tr); });
+  $('view-rules').addEventListener('click', (e) => { const tr = e.target.closest('tr.rule'); if (tr) selectRow(tr); });
+  $('view-rules').addEventListener('keydown', (e) => { const tr = e.target.closest('tr.rule'); if (tr && e.key === 'Enter') selectRow(tr); });
 
   // 첫 화면: 샘플 약관을 불러와 규칙 엔진 결과를 보여 줍니다. AI 분석은 사용자가 버튼을 눌러야 시작합니다.
   renderMaster();
   loadText(`${window.DUMMY_TERMS}\n${window.DUMMY_RIDERS}`);
   runRules();
   setStatus(inArtifact
-    ? '샘플(더미) 약관의 규칙 엔진 결과입니다. PDF를 열고 담보를 입력한 뒤 [AI 분석]을 누르세요.'
+    ? '샘플(더미) 약관의 규칙 엔진 결과입니다. PDF를 열고 분석할 담보를 고른 뒤 [선택 담보 AI 분석]을 누르세요.'
     : '샘플(더미) 약관의 규칙 엔진 결과입니다. AI 분석은 claude.ai 아티팩트에서 열었을 때 동작합니다.');
 
   window.EcsApp = { state, runRules, runAi };
