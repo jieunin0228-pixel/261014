@@ -7,3 +7,4 @@ build/
 *.pdf
 !legacy/samples/*.pdf
 !tests/fixtures/*.pdf
+dist/

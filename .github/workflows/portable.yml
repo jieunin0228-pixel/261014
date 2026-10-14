@@ -1,0 +1,41 @@
+# 설치 없이 실행하는 Windows용 묶음(TermsApp.zip)을 만들고, 실제 Windows에서 실행해 시험합니다.
+name: portable-windows
+on:
+  push:
+    branches: ["claude/**"]
+    paths: ["termsapp/**", "run.py", "requirements.txt", "scripts/build_portable.py", "tests/**", ".github/workflows/portable.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 묶음 만들기
+        run: python scripts/build_portable.py
+      - name: 묶음 안의 Python으로 자동 테스트
+        run: dist\TermsApp\python\python.exe -m unittest discover -s tests -t . -v
+      - name: 묶음으로 서버를 띄워 PDF 변환 시험
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\TermsApp\python\python.exe" -ArgumentList "dist\TermsApp\app\run.py","--no-browser" -PassThru
+          for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod http://127.0.0.1:8765/api/docs | Out-Null; break } catch { Start-Sleep 1 } }
+          $up = curl.exe -s -F "file=@tests/fixtures/sample_terms.pdf" http://127.0.0.1:8765/api/upload | ConvertFrom-Json
+          for ($i = 0; $i -lt 120; $i++) {
+            $pr = Invoke-RestMethod "http://127.0.0.1:8765/api/docs/$($up.id)/progress"
+            if ($pr.finished) { break }; Start-Sleep 1
+          }
+          if ($pr.error) { throw "변환 실패: $($pr.error)" }
+          $s = Invoke-RestMethod "http://127.0.0.1:8765/api/docs/$($up.id)/summary"
+          Write-Output ($s.stats | ConvertTo-Json)
+          if ($s.stats.articles -lt 6) { throw "조문 수가 예상보다 적습니다" }
+          Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing | Out-Null
+          Stop-Process -Id $p.Id
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TermsApp-windows
+          path: dist/TermsApp/
+          retention-days: 90
