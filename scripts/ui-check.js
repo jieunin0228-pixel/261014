@@ -39,6 +39,10 @@ const XLSX = require('xlsx');
     if (await page.locator('#view-compare tbody tr').count()) {
       console.log('비교 행:', await page.locator('#view-compare tbody tr').count());
       await page.screenshot({ path: path.join(out, 'ui-compare.png') });
+      const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#btnExcel')]);
+      await dl2.saveAs(file);
+      const b2 = XLSX.readFile(file);
+      console.log('비교 후 다운로드 시트:', b2.SheetNames.join(', '), '/ 정답지비교 행:', XLSX.utils.sheet_to_json(b2.Sheets['정답지비교']).length);
     }
   }
   console.log('페이지 오류:', errors.length ? errors : '없음');

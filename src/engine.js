@@ -405,7 +405,44 @@
     }
   }
 
+  // ───────────────────────── 정답지 비교 ─────────────────────────
+  // answerRecords: 정답지 첫 시트를 헤더 기준 객체 배열로 읽은 값(sheet_to_json).
+  // 매칭 키(급부·사고유형·사인그룹코드·계산식결정조건)로 짝을 짓고, 상세계산식·계약상태처리를 비교합니다.
+  // 공백 차이는 무시합니다.
+  const ROW_FIELD = { 구보장급부명: 'benefit', 사고유형: 'accident', 사인그룹코드: 'signGroupCode', 계산식결정조건: 'calcCondition', 상세계산식: 'formula', 계약상태처리: 'status' };
+  const normCell = (v) => String(v == null ? '' : v).replace(/\s+/g, '');
+
+  function compareWithAnswerKey(rows, answerRecords) {
+    const headers = new Set(answerRecords.flatMap((r) => Object.keys(r)));
+    const lacking = S.ANSWER_KEY_COLUMNS.filter((c) => !headers.has(c));
+    if (!answerRecords.length || lacking.length) {
+      return { error: `정답지에 필수 컬럼이 없습니다: ${(lacking.length ? lacking : S.ANSWER_KEY_COLUMNS).join(', ')}` };
+    }
+    const keyOf = (get) => S.ANSWER_KEY_MATCH.map((c) => normCell(get(c))).join('|');
+    const pool = new Map();
+    for (const r of rows) {
+      const k = keyOf((c) => r[ROW_FIELD[c]]);
+      if (!pool.has(k)) pool.set(k, []);
+      pool.get(k).push(r);
+    }
+    const items = [];
+    answerRecords.forEach((a, i) => {
+      if (S.ANSWER_KEY_MATCH.every((c) => !normCell(a[c]))) return; // 빈 행
+      const k = keyOf((c) => a[c]);
+      const cand = pool.get(k);
+      const row = cand && cand.shift();
+      if (!row) { items.push({ result: '정답지에만', answer: a, answerLine: i + 2, diffs: [] }); return; }
+      const diffs = S.ANSWER_KEY_COMPARE.filter((c) => normCell(a[c]) !== normCell(row[ROW_FIELD[c]]));
+      items.push({ result: diffs.length ? '불일치' : '일치', row, answer: a, answerLine: i + 2, diffs });
+    });
+    for (const rest of pool.values()) for (const row of rest) items.push({ result: '생성에만', row, diffs: [] });
+    const summary = { 일치: 0, 불일치: 0, 정답지에만: 0, 생성에만: 0 };
+    for (const it of items) summary[it.result]++;
+    return { items, summary };
+  }
+
   return {
+    compareWithAnswerKey,
     splitClauses, cite, paragraphText, flatten, findArticle, mentions, extractDeathBenefits,
     extractAmount, extractRenewal, extractExclusions, extractExtinction, generateRules, SCOPE_ACCIDENTS,
   };

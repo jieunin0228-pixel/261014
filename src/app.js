@@ -113,7 +113,46 @@
     XLSX.writeFile(book, `ECS_룰테이블_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  function compareAoa() { return []; }
+  const CMP_COLS = ['결과', '차이 항목', '정답지 행', '생성 행번호', '구보장급부명', '사고유형', '사인그룹코드', '계산식결정조건', '상세계산식(정답지)', '상세계산식(생성)', '계약상태처리(정답지)', '계약상태처리(생성)', '주의·테스트표시(생성)'];
+
+  function compareRecord(it) {
+    const a = it.answer || {}, r = it.row || {};
+    return [it.result, it.diffs.join(', '), it.answerLine || '', r.no || '',
+      a.구보장급부명 || r.benefit, a.사고유형 || r.accident, a.사인그룹코드 || r.signGroupCode, a.계산식결정조건 || r.calcCondition,
+      a.상세계산식 || '', r.formula || '', a.계약상태처리 || '', r.status || '', r.flagText || ''];
+  }
+
+  function compareAoa() { return [CMP_COLS, ...state.compare.items.map(compareRecord)]; }
+
+  function renderCompare() {
+    const order = { 불일치: 0, 정답지에만: 1, 생성에만: 2, 일치: 3 };
+    const items = [...state.compare.items].sort((x, y) => order[x.result] - order[y.result]);
+    const diffCol = { 8: '상세계산식', 9: '상세계산식', 10: '계약상태처리', 11: '계약상태처리' };
+    const body = items.map((it) => {
+      const rec = compareRecord(it);
+      return `<tr class="cmp-${esc(it.result)}">${rec.map((v, i) => {
+        const hot = diffCol[i] && it.diffs.includes(diffCol[i]);
+        const cls = [i === 12 ? 'wrap' : '', i >= 7 && i <= 9 ? 'mono' : '', hot ? 'diff' : ''].filter(Boolean).join(' ');
+        return `<td${cls ? ` class="${cls}"` : ''}>${esc(v)}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    $('view-compare').innerHTML = `<table><thead><tr>${CMP_COLS.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  async function compareFile(file) {
+    if (!state.result) { setStatus('먼저 약관을 변환한 뒤 정답지를 올리세요.'); return; }
+    const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const records = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: '' });
+    const cmp = E.compareWithAnswerKey(state.result.rows, records);
+    if (cmp.error) { setStatus(`${file.name}: ${cmp.error}`); return; }
+    state.compare = cmp;
+    renderRules();
+    renderCompare();
+    renderSummary();
+    const s = cmp.summary;
+    setStatus(`${file.name} 비교 결과: 일치 ${s.일치}, 불일치 ${s.불일치}, 정답지에만 ${s.정답지에만}, 생성에만 ${s.생성에만}입니다.`);
+    showTab('compare');
+  }
 
   // .txt 업로드: UTF-8 로 읽고, 깨진 문자가 있으면 EUC-KR 로 다시 읽습니다.
   async function readTextFile(file) {
@@ -133,6 +172,11 @@
     e.target.value = '';
   });
   $('btnExcel').addEventListener('click', downloadExcel);
+  $('fileAnswer').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (f) await compareFile(f);
+    e.target.value = '';
+  });
   $('tabs').addEventListener('click', (e) => { if (e.target.dataset.view) showTab(e.target.dataset.view); });
   $('view-rules').addEventListener('click', (e) => {
     const tr = e.target.closest('tr.rule');
