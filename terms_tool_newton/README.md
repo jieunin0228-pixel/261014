@@ -11,6 +11,14 @@
 
 ## 설치와 실행
 
+### 맥(Mac) (권장 방법: 두 번 클릭)
+
+1. Python 3.10 이상을 설치합니다(https://www.python.org/downloads/ 에서 [Download Python] → 내려받은 .pkg를 열어 [계속]·[동의]·[설치]).
+2. Finder에서 이 폴더(`terms_tool_newton`)의 **`run_mac.command`** 를 두 번 클릭합니다. 터미널 창이 열리고, 처음 한 번은 필요한 프로그램을 설치하느라 몇 분 걸립니다.
+   - "Apple은 악성 코드가 없음을 확인할 수 없습니다" 창이 뜨면 [시스템 설정] → [개인정보 보호 및 보안] → [그래도 열기]를 누른 뒤 다시 두 번 클릭합니다. 그래도 안 되면 터미널에 `bash `를 입력하고 이 파일을 끌어다 놓은 뒤 return을 누릅니다.
+3. 터미널이 "API 키:"를 물으면 Anthropic API 키를 붙여 넣고 return을 누릅니다(AI 기능을 쓰지 않으면 그냥 return). 키는 이번 실행에만 쓰이고 파일에 저장되지 않습니다.
+4. 브라우저가 자동으로 열리지 않으면 `http://127.0.0.1:8765` 를 입력합니다. 쓰는 동안 터미널 창을 닫지 말고, 끝낼 때는 control+C를 누릅니다.
+
 ### Windows (권장 방법: 두 번 클릭)
 
 1. Python 3.10 이상을 설치합니다(https://www.python.org/downloads/ , 설치 첫 화면에서 **Add python.exe to PATH**를 체크).
@@ -26,7 +34,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Mac·Linux에서는 `./run.sh` 로도 실행할 수 있습니다. 회사 PC에서 `pip install`이 프록시 때문에 실패하면 전산 담당자에게 사내 PyPI 미러 또는 프록시 설정을 요청합니다.
+Linux에서는 `./run.sh` 로 실행합니다. 회사 PC에서 `pip install`이 프록시 때문에 실패하면 전산 담당자에게 사내 PyPI 미러 또는 프록시 설정을 요청합니다.
 
 ### 스캔(이미지) PDF용 OCR (선택)
 
@@ -74,7 +82,8 @@ Mac·Linux에서는 `./run.sh` 로도 실행할 수 있습니다. 회사 PC에�
 AI 기능(2단계 AI 분류 제안, 3·4단계)을 쓰려면 Anthropic API 키를 **서버를 실행하는 창의 환경변수**로만 넣습니다(화면이나 파일에 저장하지 않음).
 
 - Windows: 명령 프롬프트에서 `set ANTHROPIC_API_KEY=sk-ant-...` 를 입력한 뒤 같은 창에서 `run_windows.bat`(또는 `python app.py`)를 실행합니다. 계속 쓰려면 [시스템 속성 → 환경 변수]에 사용자 변수로 등록합니다.
-- Mac·Linux: `export ANTHROPIC_API_KEY=sk-ant-...` 후 `./run.sh`
+- 맥: `run_mac.command`를 실행하면 터미널이 키를 물어봅니다. 붙여 넣으면 그 실행에만 적용됩니다.
+- Linux: `export ANTHROPIC_API_KEY=sk-ant-...` 후 `./run.sh`
 - 모델은 기본 `claude-opus-5-5`이며 `TERMS_AI_MODEL` 환경변수로 바꿀 수 있습니다. 거절(refusal) 시 서버 측 대체 모델(`fallbacks: "default"`)을 쓰도록 설정되어 있습니다.
 
 ## 3단계: 담보별 결과 카드
