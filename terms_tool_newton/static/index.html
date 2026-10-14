@@ -14,6 +14,8 @@
     <button data-tab="report">품질 보고서</button>
     <button data-tab="verify">검증</button>
     <button data-tab="classify">담보 분류 <span class="stage">2단계</span></button>
+    <button data-tab="analysis">결과 카드·ECS 초안 <span class="stage">3·4단계</span></button>
+    <button data-tab="compare">구약관 비교 <span class="stage">5단계</span></button>
   </nav>
   <div class="who">
     <span id="docName" class="docname">문서를 선택하세요</span>
@@ -105,6 +107,59 @@
     <div id="clsTree" class="card"><p class="hint">문서를 먼저 선택하세요.</p></div>
   </section>
 
+  <!-- 결과 카드·ECS 초안 (3·4단계) -->
+  <section id="tab-analysis" class="tab">
+    <div id="anBanner"></div>
+    <div class="card">
+      <div class="row">
+        <b>상품 정보</b>
+        <label>상품코드 <input id="pCode" size="8"></label>
+        <label>상품명 <input id="pName" size="24"></label>
+        <label>판매개시일자 <input id="pDate" size="9" placeholder="20260501"></label>
+        <button id="pSave">저장</button>
+        <span class="hint">ECS 초안의 상품코드·상품명·판매개시일자 칸에 들어갑니다(약관에서 읽지 않음).</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <b>코드마스터</b> <span id="mStatus" class="hint"></span>
+        <input type="file" id="mFile" accept=".xlsx">
+        <button id="mUpload">올리기</button>
+        <a href="/api/master/template.xlsx">양식 내려받기</a>
+      </div>
+    </div>
+    <div class="verify an">
+      <aside class="covlist">
+        <label class="chk"><input type="checkbox" id="anOnlySel" checked> 2단계에서 선택한 담보만</label>
+        <input id="anSearch" placeholder="담보 검색">
+        <label class="chk"><input type="checkbox" id="anAll"> 목록 전체 체크</label>
+        <div id="anItems"></div>
+        <div class="row">
+          <button id="anCards">결과 카드 만들기</button>
+          <button id="anEcs">ECS 초안 만들기</button>
+          <button id="anBoth" class="primary">둘 다</button>
+        </div>
+        <div id="anProg" class="progress hidden"><div class="bar"><div id="anBar"></div></div><div id="anProgText" class="hint"></div></div>
+      </aside>
+      <div class="panel" id="anPanel" style="grid-column: span 2"><p class="hint">왼쪽에서 담보를 고르세요.</p></div>
+    </div>
+  </section>
+
+  <!-- 구약관 비교 (5단계) -->
+  <section id="tab-compare" class="tab">
+    <div class="card">
+      <div class="row">
+        <b>비교 기준(구약관)</b>
+        <select id="cmpOld"></select>
+        <button id="cmpRun" class="primary">비교 실행</button>
+        <label class="chk"><input type="checkbox" id="cmpOnlyChanged" checked> 변경된 담보만 보기</label>
+        <button id="cmpX">엑셀(수정 전/수정 후)</button>
+      </div>
+      <p class="hint">구약관 PDF도 [문서] 탭에서 올려 1단계 변환·검증·승인을 마쳐야 목록에 나타납니다. 의미 변경 여부는 확정하지 않고 의견만 표시합니다.</p>
+      <div id="cmpSummary"></div>
+    </div>
+    <div class="card"><div id="cmpTable"></div></div>
+    <div class="card" id="cmpDetail"></div>
+  </section>
+
 <dialog id="dlg">
   <form method="dialog" id="dlgForm">
     <h3 id="dlgTitle"></h3>
@@ -115,5 +170,7 @@
 <div id="toast" class="toast hidden"></div>
 <script src="app.js"></script>
 <script src="classify.js"></script>
+<script src="analysis.js"></script>
+<script src="compare.js"></script>
 </body>
 </html>

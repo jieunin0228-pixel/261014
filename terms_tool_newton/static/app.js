@@ -99,7 +99,7 @@ async function openDoc(id) {
   renderReport();
   renderCovList();
   loadEdits();
-  if (window.clsLoad) window.clsLoad();
+  if (window.clsLoad) window.clsLoad(); if (window.anLoad) window.anLoad(); if (window.cmpLoad) window.cmpLoad();
   if (!S.cov) gotoPage(1);
 }
 
@@ -116,7 +116,7 @@ async function refresh(keepCov = true) {
   S.summary = await api(`/api/docs/${S.doc}/summary`);
   S.report = await api(`/api/docs/${S.doc}/report`);
   renderApproval(); renderReport(); renderCovList(); loadEdits();
-  if (window.clsLoad) window.clsLoad();
+  if (window.clsLoad) window.clsLoad(); if (window.anLoad) window.anLoad(); if (window.cmpLoad) window.cmpLoad();
   if (keepCov && cid) await openCov(cid, false);
 }
 
@@ -373,6 +373,7 @@ function renderInputs(body) {
 // ------------------------------------------------------------ 조문 선택·강조
 async function selectNode(id, rerender) {
   S.selNode = id;
+  S.quoteHL = null;
   try { S.selNodeFull = await api(`/api/docs/${S.doc}/node?id=${encodeURIComponent(id)}`); }
   catch (e) { toast(e.message, true); return; }
   const p = S.selNodeFull.page_start;
@@ -421,13 +422,17 @@ function drawOverlay() {
     S.lines.lines.forEach((l) => { if (l.owner && (l.owner === S.selNodeFull.id || kids.some((k) => k.id === l.owner))) want.add(l.i); });
     S.lines.lines.forEach((l) => { if (want.has(l.i)) parts.push(box(l.b, "hl")); });
   }
+  if (S.quoteHL && S.quoteHL.page === p) {
+    if (S.quoteHL.bbox) parts.push(box(S.quoteHL.bbox, "q"));
+    S.lines.lines.forEach((l) => { if (S.quoteHL.lines.includes(l.i)) parts.push(box(l.b, "q")); });
+  }
   if ($("#editMode").checked) {
     const heads = new Set((S.covData ? S.covData.nodes : []).filter((n) => n.first_line && n.first_line[0] === p && (n.kind === "article" || n.kind === "annex") && n.parent === null).map((n) => n.first_line[1]));
     S.lines.lines.forEach((l) => parts.push(box(l.b, "ln" + (heads.has(l.i) ? " head" : ""), `data-li="${l.i}" title="${esc(l.t)}"`)));
   }
   ov.innerHTML = parts.join("");
   $$(".ov.ln", ov).forEach((e) => e.addEventListener("click", () => lineClicked(+e.dataset.li)));
-  const first = $(".ov.hl", ov);
+  const first = $(".ov.q", ov) || $(".ov.hl", ov);
   if (first) {
     const wrap = $("#pageWrap");
     const top = first.offsetTop - 60;
@@ -529,7 +534,7 @@ $("#apprBadge").addEventListener("click", async () => {
   if (a.approved) {
     if (!confirm("변환 승인을 취소합니다. 계속할까요?")) return;
     S.summary.approval = await post(`/api/docs/${S.doc}/approval`, { approved: false, user: user() });
-    renderApproval(); if (window.clsLoad) window.clsLoad(); return;
+    renderApproval(); if (window.clsLoad) window.clsLoad(); if (window.anLoad) window.anLoad(); if (window.cmpLoad) window.cmpLoad(); return;
   }
   const r = S.report;
   const todo = S.summary.coverages.filter((c) => c.review.status !== "검토완료" && c.type !== "부속자료").length;
@@ -539,7 +544,7 @@ $("#apprBadge").addEventListener("click", async () => {
     <p class="hint">작업자: ${esc(user() || "(이름 미입력)")}</p>`);
   if (!ok) return;
   S.summary.approval = await post(`/api/docs/${S.doc}/approval`, { approved: true, user: user() });
-  renderApproval(); toast("변환을 승인했습니다."); if (window.clsLoad) window.clsLoad();
+  renderApproval(); toast("변환을 승인했습니다."); if (window.clsLoad) window.clsLoad(); if (window.anLoad) window.anLoad(); if (window.cmpLoad) window.cmpLoad();
 });
 $("#apprBadge").style.cursor = "pointer";
 $("#apprBadge").title = "눌러서 변환 승인 / 승인 취소";
@@ -553,3 +558,17 @@ $("#apprBadge").title = "눌러서 변환 승인 / 승인 취소";
   try { last = localStorage.getItem("doc"); tab = localStorage.getItem("tab"); } catch (e) { /* 저장 불가 */ }
   if (last) { try { await openDoc(last); if (tab) showTab(tab); } catch (e) { /* 지워진 문서 */ } }
 })();
+
+// 근거 인용 보기: 검증 화면에서 해당 쪽으로 이동하고 인용 문장이 걸친 줄을 주황색으로 강조합니다.
+window.showQuote = async function (docId, cid, ev) {
+  const qs = ev.kind === "table" ? `table=${encodeURIComponent(ev.id)}` : `node=${encodeURIComponent(ev.id)}&quote=${encodeURIComponent(ev.quote || "")}`;
+  let loc;
+  try { loc = await api(`/api/docs/${docId}/locate?${qs}`); } catch (e) { return toast(e.message, true); }
+  showTab("verify");
+  const target = loc.cid || cid;
+  if (target && S.cov !== target) await openCov(target, false);
+  S.selNode = null; S.selNodeFull = null;
+  S.quoteHL = { page: loc.page, lines: loc.lines || [], bbox: loc.bbox || null };
+  await gotoPage(loc.page);
+  if (loc.found === false) toast("인용 문장의 정확한 줄을 찾지 못해 조문 첫 줄을 표시합니다.", true);
+};

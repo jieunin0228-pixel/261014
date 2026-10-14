@@ -155,6 +155,45 @@ def excel(doc_id, cids=None):
                  (it.get("ai") or {}).get("status"), it.get("review", "미검토"), "선택" if it["cid"] in sel_cls else ""]
                 for it in its], {"담보명": 50, "분류 근거": 60, "근거 인용": 60, "근거 조문": 40})
 
+    cd = pipeline.read_json(doc_id, "cards.json", {}) or {}
+    if cd:
+        rows = []
+        for cid, card in cd.items():
+            if cid not in sel:
+                continue
+            for sec, key in (("items", "field"), ("cautions", "topic"), ("isolated", None)):
+                for it in card.get(sec, []):
+                    label = it.get("field") or it.get("topic")
+                    ev = it.get("evidence") or []
+                    rows.append([cid, card["name"], {"items": "A 보장 세부조건", "cautions": "B 전산화 주의사항",
+                                                     "isolated": "근거 불일치(격리)"}[sec], label, it["content"],
+                                 it.get("check"), "; ".join(it.get("interpretations") or []),
+                                 "\n".join(f"{e.get('id')} ({e.get('page')}쪽) “{e.get('quote')}”" for e in ev),
+                                 it.get("review", "미검토")])
+        ws = _sheet(wb, "결과카드", ["담보ID", "담보명", "구분", "항목", "내용", "근거 상태", "가능한 해석", "근거(조문·쪽·인용)", "검토"],
+                    rows, {"담보명": 30, "내용": 70, "근거(조문·쪽·인용)": 70, "가능한 해석": 40})
+        for row in ws.iter_rows(min_row=2):
+            for c in row:
+                c.alignment = Alignment(wrap_text=True, vertical="top")
+    from . import ecs as ecsmod
+    ed = ecsmod.load(doc_id)
+    if ed:
+        rows = []
+        for cid in ed:
+            if cid not in sel:
+                continue
+            v = ecsmod.view_rows(doc_id, cid)
+            for r in v["rows"]:
+                for f in ecsmod.FIELDS:
+                    cell = r["fields"][f["key"]]
+                    bc = cell.get("before") or {}
+                    rows.append([cid, v["name"], r["label"], f["group"], f["label"], bc.get("code"), bc.get("name"),
+                                 cell["code"], cell["name"], cell["status"], ", ".join(cell.get("flags") or []),
+                                 ", ".join(f"{e.get('page')}쪽" for e in cell["evidence"]), cell.get("note"), cell.get("review")])
+        _sheet(wb, "ECS초안", ["담보ID", "담보명", "룰 행", "구역", "필드", "수정 전 코드", "수정 전 명칭", "수정 후 코드",
+                             "수정 후 명칭", "상태", "표시", "근거 쪽", "비고", "검토"], rows,
+               {"담보명": 30, "룰 행": 30, "수정 후 명칭": 30, "표시": 30, "비고": 40})
+
     _sheet(wb, "수정이력", ["시각", "작업자", "구분", "내용"],
            [[h["at"], h["user"], h["what"], json.dumps(h["data"], ensure_ascii=False)] for h in d["history"]],
            {"내용": 100})
@@ -182,6 +221,12 @@ def json_zip(doc_id, cids=None):
         c["review"] = d["reviews"].get(c["cid"], {"status": "미검토"})
     bio = io.BytesIO()
     with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as z:
+        for extra in ("cards.json", "ecs.json"):
+            ex = pipeline.read_json(doc_id, extra)
+            if ex:
+                if sel:
+                    ex = {k: v for k, v in ex.items() if k in sel}
+                z.writestr(extra, json.dumps(ex, ensure_ascii=False, indent=1))
         cls = pipeline.read_json(doc_id, "classification.json")
         if cls:
             cls = dict(cls)

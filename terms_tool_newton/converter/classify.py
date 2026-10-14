@@ -396,23 +396,9 @@ def ai_available():
 
 def _call_claude(system, user_text):
     """Claude API 한 번 호출. 시험에서는 이 함수를 가짜로 바꿉니다."""
-    import anthropic
-    client = anthropic.Anthropic()
-    resp = client.beta.messages.create(
-        model=AI_MODEL,
-        max_tokens=16000,
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=system,
-        messages=[{"role": "user", "content": user_text}],
-    )
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("Claude가 요청을 거절했습니다(refusal).")
-    if resp.stop_reason == "max_tokens":
-        raise RuntimeError("응답이 길이 제한에 걸렸습니다.")
-    text = next(b.text for b in resp.content if b.type == "text")
-    return json.loads(text)
+    from . import ai
+    out, _ = ai.call_json([{"type": "text", "text": system}], user_text, SCHEMA, effort="low", max_tokens=16000)
+    return out
 
 
 def verify_quote(quote, source_text):

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from converter import classify, export, pipeline  # noqa: E402
+from converter import ai, cards, classify, compare, ecs, export, pipeline  # noqa: E402
 from converter.structure import COVERAGE_TYPES  # noqa: E402
 
 app = FastAPI(title="약관 구조화 도구")
@@ -44,7 +44,7 @@ def cached(doc_id, name):
 
 
 def check_doc(doc_id):
-    if not doc_id.isalnum() or not os.path.isdir(pipeline.doc_dir(doc_id)):
+    if not doc_id or not doc_id.isalnum() or not os.path.isdir(pipeline.doc_dir(doc_id)):
         raise HTTPException(404, "문서를 찾을 수 없습니다.")
 
 
@@ -326,6 +326,208 @@ def cls_op(doc_id: str, op: str, body: dict = Body(...)):
     else:
         raise HTTPException(404, "알 수 없는 작업")
     return classify.view(doc_id)
+
+
+# ---------------------------------------------------------------- 3·4단계: 결과 카드·ECS 초안
+
+def _require_approved(doc_id):
+    if not pipeline.is_approved(doc_id):
+        raise HTTPException(409, "1단계 변환이 승인되지 않아 AI 해석을 실행할 수 없습니다. 검증 후 [변환 승인]을 먼저 누르세요.")
+    if not ai.available():
+        raise HTTPException(400, "ANTHROPIC_API_KEY 환경변수가 설정되지 않아 AI 해석을 실행할 수 없습니다. README의 'AI 사용 설정'을 참고하세요.")
+
+
+@app.get("/api/docs/{doc_id}/analysis")
+def analysis_view(doc_id: str):
+    check_doc(doc_id)
+    cls = classify.load(doc_id) or {}
+    cmap = cached(doc_id, "coverage_map.json")
+    covs = [{"cid": c["cid"], "name": c["name"], "type": c["type"], "start": c["start"], "end": c["end"]}
+            for c in cmap["coverages"] if c["type"] in classify.CLASSIFY_TYPES]
+    cd, ed = cards.load(doc_id), ecs.load(doc_id)
+    for c in covs:
+        it = (cls.get("items") or {}).get(c["cid"]) or {}
+        c["class"] = "/".join(x for x in (it.get("major"), it.get("mid"), it.get("minor")) if x)
+        c["display_name"] = it.get("display_name")
+        c["has_card"] = c["cid"] in cd
+        c["has_ecs"] = c["cid"] in ed
+    appr = pipeline.read_json(doc_id, "approval.json", {}) or {}
+    return {"coverages": covs, "selected": cls.get("selected") or [], "approved": bool(appr.get("approved")),
+            "approval_at": appr.get("at"), "ai_available": ai.available(), "model": ai.MODEL,
+            "product": ecs.product(doc_id), "master": _master_summary(), "fields": ecs.FIELDS}
+
+
+def _master_summary():
+    m = ecs.load_master()
+    return {"loaded": bool(m.get("fields")), "imported_at": m.get("imported_at"),
+            "fields": {k: len(v) for k, v in (m.get("fields") or {}).items()}}
+
+
+@app.post("/api/docs/{doc_id}/analysis/run")
+def analysis_run(doc_id: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    _require_approved(doc_id)
+    cids = [c for c in body.get("cids", []) if c]
+    if not cids:
+        raise HTTPException(400, "분석할 담보를 고르세요.")
+    stage = body.get("stage")
+    u = body.get("user", "")
+
+    def task(prog):
+        if stage in ("cards", "both"):
+            cards.run(doc_id, cids, u, lambda s, f, m="": prog(s, f * (0.5 if stage == "both" else 1), m))
+        if stage in ("ecs", "both"):
+            ecs.run(doc_id, cids, u, lambda s, f, m="": prog(s, (0.5 + f / 2) if stage == "both" else f, m))
+    if stage not in ("cards", "ecs", "both"):
+        raise HTTPException(400, "stage는 cards/ecs/both 중 하나입니다.")
+    return pipeline.start_task(doc_id, task, "AI 해석")
+
+
+@app.get("/api/docs/{doc_id}/card/{cid}")
+def card_get(doc_id: str, cid: str):
+    check_doc(doc_id)
+    card = cards.load(doc_id).get(cid)
+    tables = {t["id"]: t for t in cached(doc_id, "tables.json")["tables"]}
+    if card:
+        card = dict(card)
+        card["table_data"] = [tables[t["table"]] for t in card["tables"] if t["table"] in tables]
+    appr = pipeline.read_json(doc_id, "approval.json", {}) or {}
+    cmp_data = compare.load(doc_id)
+    before = None
+    if cmp_data:
+        p = next((p for p in cmp_data["pairs"] if p["new"] == cid), None)
+        if p and p["old"]:
+            before = (ecs.load(cmp_data["old_doc"]).get(p["old"]) or {}).get("rows")
+    rows = ecs.view_rows(doc_id, cid, before)
+    return {"card": card, "ecs": rows, "stale": bool(card and card.get("approval_at") != appr.get("at")),
+            "compare_mode": before is not None}
+
+
+@app.post("/api/docs/{doc_id}/card/{cid}/review")
+def card_review(doc_id: str, cid: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    try:
+        cards.set_review(doc_id, cid, body["item"], body["status"], body.get("user", ""))
+    except (KeyError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/docs/{doc_id}/ecs/{cid}/{op}")
+def ecs_op(doc_id: str, cid: str, op: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    try:
+        if op == "edit":
+            ecs.edit_cell(doc_id, cid, body["row"], body["field"], body.get("code", ""), body.get("name", ""), body.get("user", ""))
+        elif op == "review":
+            ecs.set_review(doc_id, cid, body["row"], body.get("field"), body["status"], body.get("user", ""))
+        else:
+            raise HTTPException(404, "알 수 없는 작업")
+    except (KeyError, StopIteration, ValueError) as e:
+        raise HTTPException(400, f"수정할 항목을 찾지 못했습니다: {e}")
+    return {"ok": True}
+
+
+@app.post("/api/docs/{doc_id}/product")
+def product_set(doc_id: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    return ecs.set_product(doc_id, body, body.get("user", ""))
+
+
+@app.get("/api/master/template.xlsx")
+def master_template():
+    return Response(ecs.master_template(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="code_master_template.xlsx"'})
+
+
+@app.post("/api/master")
+async def master_upload(file: UploadFile = File(...)):
+    data = await file.read()
+    try:
+        return ecs.import_master(data)
+    except Exception as e:
+        raise HTTPException(400, f"코드마스터를 읽지 못했습니다: {e}")
+
+
+@app.get("/api/docs/{doc_id}/locate")
+def locate(doc_id: str, node: str = "", table: str = "", quote: str = ""):
+    """근거 인용 위치: 조문(또는 표)의 줄 가운데 인용문이 걸친 줄을 찾아 쪽과 줄 번호를 돌려줍니다."""
+    check_doc(doc_id)
+    from converter.extract import norm_text
+    raw = cached(doc_id, "raw_pages.json")["pages"]
+    if table:
+        t = next((t for t in cached(doc_id, "tables.json")["tables"] if t["id"] == table), None)
+        if not t:
+            raise HTTPException(404, "표 없음")
+        return {"page": t["page"], "lines": [], "bbox": t["bbox"], "cid": t["cid"]}
+    nodes = cached(doc_id, "terms.json")["nodes"]
+    if node not in nodes:
+        raise HTTPException(404, "조문 없음")
+    refs = []
+
+    def collect(nid):
+        refs.extend(nodes[nid]["lines"])
+        for c in nodes[nid]["children"]:
+            collect(c)
+    collect(node)
+    refs.sort()
+    q = norm_text(quote)
+    texts = [norm_text(raw[p - 1]["lines"][i]["t"]) for p, i in refs]
+    joined, spans, pos = "", [], 0
+    for t in texts:
+        spans.append((pos, pos + len(t)))
+        joined += t
+        pos += len(t)
+    k = joined.find(q) if q else -1
+    if k < 0:
+        p0 = refs[0][0] if refs else nodes[node]["page_start"]
+        return {"page": p0, "lines": [i for p, i in refs if p == p0][:1], "found": False, "cid": nodes[node]["cid"]}
+    hit = [refs[j] for j, (a, b) in enumerate(spans) if a < k + len(q) and b > k]
+    page = hit[0][0]
+    return {"page": page, "lines": [i for p, i in hit if p == page], "found": True, "cid": nodes[node]["cid"]}
+
+
+# ---------------------------------------------------------------- 5단계: 구약관 비교
+
+@app.get("/api/docs/{doc_id}/compare")
+def compare_view(doc_id: str):
+    check_doc(doc_id)
+    docs = [d for d in pipeline.list_docs() if d["id"] != doc_id]
+    return {"data": compare.load(doc_id), "candidates": docs,
+            "approved": pipeline.is_approved(doc_id)}
+
+
+@app.post("/api/docs/{doc_id}/compare")
+def compare_run(doc_id: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    old = body.get("old_doc", "")
+    check_doc(old)
+    try:
+        return {"data": compare.run(doc_id, old, body.get("user", ""))}
+    except PermissionError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/docs/{doc_id}/compare/match")
+def compare_match(doc_id: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    try:
+        return {"data": compare.set_match(doc_id, body["new"], body.get("old") or "", body.get("user", ""))}
+    except (KeyError, PermissionError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/docs/{doc_id}/compare.xlsx")
+def compare_xlsx(doc_id: str, all: bool = False):
+    check_doc(doc_id)
+    try:
+        data = compare.excel(doc_id, only_changed=not all)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="compare_{doc_id}.xlsx"'})
 
 
 # ---------------------------------------------------------------- 내보내기
