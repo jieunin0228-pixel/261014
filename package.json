@@ -8,6 +8,7 @@
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
+    "pdfjs-dist": "^3.11.174",
     "xlsx": "0.18.5"
   }
 }

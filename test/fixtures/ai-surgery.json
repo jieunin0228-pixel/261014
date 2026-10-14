@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {"category":"정상","claim":"수술","claimCode":"S11","accident":"일반","accidentCode":"G01","benefit":"수술보험금","benefitCode":"","riskBenefit":"질병수술","riskBenefitCode":"","signGroup":"사인그룹|질병및일반","signGroupCode":"T03","calcCondition":"수술종류=1종 AND 경과기간>90일","calcTarget":"가입금액","formula":"[가입금액] * 0.1","status":"유지","statusCode":"1",
+     "evidence":[{"ref":"제2조 제1항 제1호","quote":"1종 수술: 가입금액의 10%"},{"ref":"제2조 제2항","quote":"질병으로 인한 수술의 경우 계약일부터 90일 이내에 받은 수술에 대하여는 보험금을 지급하지 않습니다."}],
+     "flags":[{"level":"warn","reason":"'90일 이내' 경계일 포함 여부가 문언상 불명확합니다."}]},
+    {"category":"면책","claim":"수술","claimCode":"S11","accident":"일반","accidentCode":"G01","benefit":"수술보험금","benefitCode":"","riskBenefit":"질병수술","riskBenefitCode":"","signGroup":"사인그룹|질병및일반","signGroupCode":"T03","calcCondition":"경과기간<=90일","calcTarget":"가입금액","formula":"[가입금액] * 0","status":"유지","statusCode":"1",
+     "evidence":[{"ref":"제2조 제2항","quote":"질병으로 인한 수술의 경우 계약일부터 90일 이내에 받은 수술에 대하여는 보험금을 지급하지 않습니다."}],"flags":[]},
+    {"category":"정상","claim":"수술","claimCode":"S11","accident":"일반재해","accidentCode":"B12","benefit":"수술보험금","benefitCode":"","riskBenefit":"재해수술","riskBenefitCode":"","signGroup":"사인그룹|일반재해","signGroupCode":"T02","calcCondition":"수술종류=1종","calcTarget":"가입금액","formula":"[가입금액] * 0.1","status":"유지","statusCode":"1",
+     "evidence":[{"ref":"제2조 제1항 제1호","quote":"1종 수술: 가입금액의 10%"}],"flags":[]},
+    {"category":"정상","claim":"수술","claimCode":"S11","accident":"일반재해","accidentCode":"B12","benefit":"수술보험금","benefitCode":"","riskBenefit":"재해수술","riskBenefitCode":"","signGroup":"사인그룹|기타수술","signGroupCode":"T99","calcCondition":"수술종류=2종","calcTarget":"가입금액","formula":"[가입금액] * 0.2","status":"유지","statusCode":"1",
+     "evidence":[{"ref":"제2조 제1항 제2호","quote":"2종 수술: 가입금액의 20%"}],"flags":[]},
+    {"category":"정상","claim":"수술","claimCode":"S11","accident":"일반재해","accidentCode":"B12","benefit":"수술보험금","benefitCode":"","riskBenefit":"재해수술","riskBenefitCode":"","signGroup":"사인그룹|일반재해","signGroupCode":"T02","calcCondition":"수술종류=3종","calcTarget":"가입금액","formula":"[가입금액] * 0.5","status":"유지","statusCode":"1",
+     "evidence":[{"ref":"제2조 제1항 제3호","quote":"3종 수술은 가입금액의 절반을 지급합니다."}],"flags":[]}
+  ],
+  "manual": [
+    {"subject":"임신·출산·산후기 수술","ref":"제3조 제1항 제2호","quote":"피보험자의 임신, 출산(제왕절개를 포함합니다), 산후기로 수술을 받은 경우","reason":"대응 사인그룹 코드가 없습니다."}
+  ],
+  "missing": []
+}

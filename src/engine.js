@@ -267,7 +267,9 @@
         claim: S.CLAIM.name,
         accidentCode: S.ACCIDENT_TYPES[r.accident].code,
         accident: r.accident,
+        benefitCode: '',
         benefit: r.benefit.name,
+        riskBenefitCode: '',
         riskBenefit: `${r.accident}사망`,
         signGroupCode: r.signGroupCode,
         signGroup: sg.name,
@@ -362,12 +364,11 @@
   }
 
   // 규칙 8: 🔴 금액 오산출 위험 / 🟡 매핑·중복 점검 표시와 테스트 시나리오
-  function markRisks(rows) {
+  // knownVariables: ECS 에 등록된 변수 목록(코드표). 이 밖의 변수는 신규 변수로 🔴 표시합니다.
+  function markRisks(rows, knownVariables = S.KNOWN_VARIABLES) {
     for (const r of rows) {
-      const boundary = r.calcCondition.match(/(\S+?)(<=|>)(\d+)년/);
-      if (boundary) {
-        const [, v, , n] = boundary;
-        r.flags.push({ level: 'red', reason: `경계일 조건(${v} ${n}년)`, test: `${v} 값이 ${n}년-1일, ${n}년 당일, ${n}년+1일인 사망 3건을 입력해 감액·면책 경계와 산출액을 확인합니다.` });
+      for (const [, v, , n, unit] of r.calcCondition.matchAll(/([^\s=<>]+?)(<=|>=|<|>)(\d+)(년|개월|일)/g)) {
+        r.flags.push({ level: 'red', reason: `경계일 조건(${v} ${n}${unit})`, test: `${v} 값이 ${n}${unit}-1일, ${n}${unit} 당일, ${n}${unit}+1일인 ${r.claim} 3건을 입력해 감액·면책 경계와 산출액을 확인합니다.` });
       }
       if (r.formula.includes('Math.max')) {
         r.flags.push({ level: 'red', reason: 'Math.max 산식', test: '가입금액>기납입보험료, 가입금액<기납입보험료, 두 값이 같은 경우 3건을 입력해 큰 금액이 산출되는지 확인합니다.' });
@@ -376,14 +377,14 @@
         ...[...r.formula.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]),
         ...[...r.calcCondition.matchAll(/([가-힣]+)(?:<=|>=|<|>|=)/g)].map((m) => m[1]),
       ]);
-      const fresh = [...vars].filter((v) => !S.KNOWN_VARIABLES.includes(v));
+      const fresh = [...vars].filter((v) => !knownVariables.includes(v));
       if (fresh.length) {
         r.flags.push({ level: 'red', reason: `신규 변수(${fresh.join(', ')})`, test: `ECS에 [${fresh.join('], [')}] 변수를 등록하고, 값이 비었거나 0일 때 산출 결과가 오류 없이 처리되는지 확인합니다.` });
       }
     }
     const groups = new Map();
     for (const r of rows) {
-      const k = `${r.accidentCode}|${r.signGroupCode}|${r.calcCondition}`;
+      const k = `${r.claim}|${r.accident}|${r.signGroupCode}|${r.calcCondition}`;
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(r);
     }
@@ -393,7 +394,7 @@
       for (const r of g) r.flags.push({
         level: 'yellow',
         reason: `동일 사고유형·사인그룹·조건에 복수 급부 매핑(${names.join(', ')})`,
-        test: `${r.accident} 사고·${r.signGroupCode} 사망 1건을 입력해 ${names.join('+')}이(가) 의도대로 함께 산출되는지, 중복 지급이 아닌지 확인합니다.`,
+        test: `${r.accident} 사고·${r.signGroupCode} ${r.claim} 1건을 입력해 ${names.join('+')}이(가) 의도대로 함께 산출되는지, 중복 지급이 아닌지 확인합니다.`,
       });
     }
     for (const r of rows) {
@@ -444,6 +445,6 @@
   return {
     compareWithAnswerKey,
     splitClauses, cite, paragraphText, flatten, findArticle, mentions, extractDeathBenefits,
-    extractAmount, extractRenewal, extractExclusions, extractExtinction, generateRules, SCOPE_ACCIDENTS,
+    extractAmount, extractRenewal, extractExclusions, extractExtinction, generateRules, markRisks, SCOPE_ACCIDENTS,
   };
 });
