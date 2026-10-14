@@ -17,6 +17,7 @@
     { key: 'riskBenefit', label: '위험급부명' },
     { key: 'signGroupCode', label: '사인그룹코드' },
     { key: 'signGroup', label: '급부결정조건(사인그룹)' },
+    { key: 'codeNote', label: '코드상태' },
     { key: 'calcCondition', label: '계산식결정조건' },
     { key: 'calcTarget', label: '계산대상' },
     { key: 'formula', label: '상세계산식' },

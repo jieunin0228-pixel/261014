@@ -166,15 +166,28 @@
     variables: { sheet: '변수', cols: ['변수명', '설명'] },
   };
 
-  // 화면 사진에서 확인한 일부 코드와 더미 코드. 실제 코드표를 올리면 대체됩니다.
+  // 임시 코드표: 화면 사진에서 확인한 코드(S01·G01·T01 등)에, 진단·수술·입원·요양 담보를 표현할 수 있도록
+  // 지어낸 코드를 더했습니다. 지어낸 코드는 모두 "TMP-"로 시작하거나 prov:true 로 표시하며, 실제 코드표를 올리면 대체됩니다.
+  // provisional:true 인 코드표로 분석하면, 맞는 코드가 없을 때 행을 버리지 않고 임시 코드를 새로 붙입니다.
   function defaultMaster() {
+    const p = (code, name, desc = '') => ({ code, name, desc, prov: true });
+    const r = (code, name, desc = '') => ({ code, name, desc });
     return {
-      source: '기본(더미) 코드표',
-      claims: [{ code: 'S01', name: '사망' }, { code: 'S08', name: '장해' }, { code: 'S11', name: '수술' }, { code: 'S15', name: '진단' }],
-      accidents: [{ code: 'G01', name: '일반' }, { code: 'B12', name: '일반재해' }, { code: 'B03', name: '교통재해' }],
-      signGroups: Object.entries(S.SIGN_GROUPS).map(([code, g]) => ({ code, name: g.name, desc: (g.keywords || []).join(', ') })),
+      source: '임시 코드표(실제 ECS 코드 아님)',
+      provisional: true,
+      claims: [r('S01', '사망'), r('S08', '장해'), r('S11', '수술'), r('S15', '진단'),
+        p('TMP-C01', '입원'), p('TMP-C02', '통원'), p('TMP-C03', '요양·간병'), p('TMP-C04', '기타')],
+      accidents: [r('G01', '일반', '질병 등 재해 이외의 원인'), r('B12', '일반재해', '교통재해 이외의 재해'), r('B03', '교통재해')],
+      signGroups: [
+        r('T00', '사인그룹|재해', '재해 전체'), r('T01', '사인그룹|교통재해'), r('T02', '사인그룹|일반재해'), r('T03', '사인그룹|질병및일반', '질병 등 재해 이외'),
+        p('T10', '사인그룹|고의자해', '고의로 자신을 해친 경우, 자살'), p('T20', '사인그룹|전쟁·내란', '전쟁, 무력행사, 혁명, 내란, 사변, 폭동'),
+        p('TMP-SG01', '사인그룹|암', '일반암(소액암 제외)'), p('TMP-SG02', '사인그룹|소액암', '갑상선암, 기타피부암, 제자리암, 경계성종양'),
+        p('TMP-SG03', '사인그룹|뇌혈관질환'), p('TMP-SG04', '사인그룹|뇌출혈'), p('TMP-SG05', '사인그룹|뇌졸중', '뇌경색 포함'),
+        p('TMP-SG06', '사인그룹|급성심근경색증'), p('TMP-SG07', '사인그룹|허혈성심장질환'), p('TMP-SG08', '사인그룹|치매'),
+        p('TMP-SG09', '사인그룹|장기요양'), p('TMP-SG10', '사인그룹|임신·출산', '임신, 출산, 산후기'), p('TMP-SG11', '사인그룹|정신질환'),
+        p('TMP-SG12', '사인그룹|치아질환'), p('TMP-SG13', '사인그룹|골절'), p('TMP-SG14', '사인그룹|화상')],
       benefits: [],
-      statuses: Object.entries(S.STATUS).map(([name, code]) => ({ code, name })),
+      statuses: [r('9', '소멸'), p('1', '유지'), p('TMP-ST1', '특약소멸'), p('TMP-ST2', '납입면제')],
       variables: [...S.KNOWN_VARIABLES],
     };
   }
@@ -212,6 +225,7 @@
   function masterText(m) {
     const list = (arr, f) => (arr.length ? arr.map(f).join('\n') : '(없음)');
     return [
+      ...(m.provisional ? ['※ 임시 코드표입니다. 가장 가까운 코드를 고르고, 맞는 코드가 없으면 code는 ""로 두고 명칭(signGroup 등)만 적으십시오. 명칭은 "사인그룹|○○" 형식으로 씁니다.'] : []),
       `[청구사유]\n${list(m.claims, (c) => `${c.code} ${c.name}`)}`,
       `[사고유형]\n${list(m.accidents, (c) => `${c.code} ${c.name}`)}`,
       `[사인그룹]\n${list(m.signGroups, (c) => `${c.code} ${c.name}${c.desc ? ` (${c.desc})` : ''}`)}`,
@@ -330,35 +344,67 @@ ${JSON.stringify(OUTPUT_EXAMPLE)}`;
 
   // ───────────────────────── Claude 결과 검증 ─────────────────────────
   const squash = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+  // 인용 대조용 정규화: 공백·문장부호·괄호 차이는 무시합니다(PDF 표·줄바꿈 때문에 자주 달라집니다).
+  const loose = (s) => String(s == null ? '' : s).replace(/[\s.,·ㆍ・:;'"“”‘’「」『』()（）\[\]<>〈〉《》{}\-–—~∼|/※*]/g, '');
   const CODE_FIELDS = [
-    ['claimCode', 'claim', 'claims', '청구사유'],
-    ['accidentCode', 'accident', 'accidents', '사고유형'],
-    ['signGroupCode', 'signGroup', 'signGroups', '사인그룹'],
-    ['statusCode', 'status', 'statuses', '계약상태'],
+    ['claimCode', 'claim', 'claims', '청구사유', 'TMP-C'],
+    ['accidentCode', 'accident', 'accidents', '사고유형', 'TMP-A'],
+    ['signGroupCode', 'signGroup', 'signGroups', '사인그룹', 'TMP-SG'],
+    ['statusCode', 'status', 'statuses', '계약상태', 'TMP-ST'],
   ];
   const LEVELS = new Set(['red', 'yellow', 'warn']);
+  const BENEFIT_PREFIX = { 사망: 'D', 진단: 'J', 수술: 'S', 요양: 'Y', 입원: 'H', 기타: 'E' };
+
+  // 반환: 'full'(전체 일치) | 'partial'(연속 8글자 조각의 70% 이상이 원문에 있음) | null
+  // 흔한 낱말("가입금액의", "지급합니다")만 맞는 지어낸 인용은 8글자 조각이 거의 맞지 않아 걸러집니다.
+  function matchQuote(quote, looseText) {
+    const q = loose(quote);
+    if (q.length < 6) return null;
+    if (looseText.includes(q)) return 'full';
+    if (q.length < 12) return null;
+    const N = 8;
+    let hit = 0, total = 0;
+    for (let i = 0; i + N <= q.length; i++) { total += 1; if (looseText.includes(q.slice(i, i + N))) hit += 1; }
+    return hit / total >= 0.7 ? 'partial' : null;
+  }
+
+  // 임시 코드표에 새 임시 코드를 등록합니다(같은 명칭이면 같은 코드).
+  function provisionalCode(list, name, prefix) {
+    const found = list.find((c) => c.name === name);
+    if (found) return found.code;
+    const n = list.filter((c) => c.code.startsWith(prefix)).length + 1;
+    const code = `${prefix}${String(n).padStart(2, '0')}${prefix === 'TMP-SG' ? 'N' : ''}`;
+    list.push({ code, name, desc: 'AI 결과에서 새로 만든 임시 코드', prov: true, added: true });
+    return code;
+  }
 
   // ai: Claude 가 돌려준 JSON. sourceText: 그 호출에 보낸 약관 원문(인용 검증 기준).
-  // 반환: { rows, manual, missing } — 행은 engine 행과 같은 모양(evidence·flags 포함, 위험 표시 전)
+  // master 가 임시 코드표(provisional)이면 맞는 코드가 없을 때 임시 코드를 새로 붙이고(master 에 추가), 행을 버리지 않습니다.
+  // 반환: { rows, manual, missing, stats } — 행은 engine 행과 같은 모양(evidence·flags 포함, 위험 표시 전)
   function verifyAiResult(ai, { sourceText, sectionTitle, master }) {
-    const text = squash(sourceText);
-    const out = { rows: [], manual: [], missing: [] };
-    const inSource = (q) => squash(q).length >= 8 && text.includes(squash(q));
+    const text = loose(sourceText);
+    const out = { rows: [], manual: [], missing: [], stats: { proposed: 0, kept: 0, toManual: 0, noEvidence: 0, partialQuotes: 0, newCodes: 0 } };
     const refOf = (ref) => `${sectionTitle} ${String(ref || '').trim()}`.trim();
     const str = (v) => String(v == null ? '' : v).trim();
     if (!ai || typeof ai !== 'object') {
       out.missing.push({ subject: sectionTitle, ref: '', reason: 'Claude 응답이 JSON 객체가 아닙니다.' });
       return out;
     }
+    const prov = !!master.provisional;
 
     for (const r of Array.isArray(ai.rows) ? ai.rows : []) {
+      if (!r || typeof r !== 'object') continue;
+      out.stats.proposed += 1;
       const flags = (Array.isArray(r.flags) ? r.flags : [])
         .filter((f) => f && LEVELS.has(f.level) && f.reason)
         .map((f) => ({ level: f.level, reason: str(f.reason), ...(f.test ? { test: str(f.test) } : {}) }));
       const evidence = [];
       for (const e of Array.isArray(r.evidence) ? r.evidence : []) {
-        if (e && inSource(e.quote)) evidence.push({ ref: refOf(e.ref), text: str(e.quote) });
-        else if (e) flags.push({ level: 'warn', reason: `인용문이 약관 원문과 일치하지 않아 근거에서 뺐습니다: "${str(e.quote).slice(0, 60)}"` });
+        if (!e) continue;
+        const m = matchQuote(e.quote, text);
+        if (m) evidence.push({ ref: refOf(e.ref), text: str(e.quote) });
+        if (m === 'partial') { out.stats.partialQuotes += 1; flags.push({ level: 'warn', reason: `인용문이 원문과 일부만 일치합니다(${refOf(e.ref)}). 원문을 직접 확인하십시오.` }); }
+        if (!m) flags.push({ level: 'warn', reason: `인용문이 약관 원문과 일치하지 않아 근거에서 뺐습니다: "${str(e.quote).slice(0, 60)}"` });
       }
       const row = {
         category: ['정상', '감액', '면책'].includes(str(r.category)) ? str(r.category) : '정상',
@@ -366,55 +412,80 @@ ${JSON.stringify(OUTPUT_EXAMPLE)}`;
         benefit: str(r.benefit), benefitCode: str(r.benefitCode), riskBenefit: str(r.riskBenefit), riskBenefitCode: str(r.riskBenefitCode),
         signGroup: str(r.signGroup), signGroupCode: str(r.signGroupCode),
         calcCondition: str(r.calcCondition) || '-', calcTarget: str(r.calcTarget), formula: str(r.formula),
-        status: str(r.status) || '확인필요', statusCode: str(r.statusCode), section: sectionTitle, evidence, flags,
+        status: str(r.status) || '확인필요', statusCode: str(r.statusCode), section: sectionTitle, evidence, flags, provisional: [],
       };
       if (!['정상', '감액', '면책'].includes(str(r.category))) flags.push({ level: 'warn', reason: `구분 값 "${str(r.category)}"을 알 수 없어 정상으로 두었습니다.` });
 
       // 규칙 6: 원문으로 확인된 근거가 없으면 행을 만들지 않습니다.
       if (!evidence.length) {
+        out.stats.noEvidence += 1;
         out.missing.push({ subject: `${row.benefit} ${row.accident} ${row.calcCondition}`.trim(), ref: sectionTitle, reason: '인용한 원문을 약관에서 찾지 못해 행을 만들지 않았습니다.' });
         continue;
       }
-      // 코드표 대조: 없는 코드는 비우고, 비어 있으면 명칭이 정확히 같은 코드로 채웁니다.
-      for (const [codeKey, nameKey, listKey, label] of CODE_FIELDS) {
-        const list = master[listKey] || [];
+      // 코드표 대조: 없는 코드는 비우고, 비어 있으면 명칭이 같은 코드로 채웁니다.
+      // 임시 코드표이면 그래도 비어 있는 코드에 임시 코드를 새로 붙입니다.
+      for (const [codeKey, nameKey, listKey, label, prefix] of CODE_FIELDS) {
+        const list = master[listKey] || (master[listKey] = []);
         if (row[codeKey] && !list.some((c) => c.code === row[codeKey])) {
           flags.push({ level: 'warn', reason: `${label} 코드 ${row[codeKey]}는 코드표에 없어 비웠습니다.` });
           row[codeKey] = '';
         }
         if (!row[codeKey]) {
-          const byName = list.find((c) => c.name === row[nameKey]);
+          const byName = list.find((c) => c.name === row[nameKey] || c.name.replace(/^사인그룹\|/, '') === row[nameKey].replace(/^사인그룹\|/, ''));
           if (byName) row[codeKey] = byName.code;
-          else if (codeKey !== 'signGroupCode') flags.push({ level: 'warn', reason: `${label} "${row[nameKey]}"에 대응하는 코드가 코드표에 없습니다.` });
+          else if (prov && row[nameKey]) {
+            row[codeKey] = provisionalCode(list, row[nameKey], prefix);
+            out.stats.newCodes += 1;
+          } else if (codeKey !== 'signGroupCode') flags.push({ level: 'warn', reason: `${label} "${row[nameKey]}"에 대응하는 코드가 코드표에 없습니다.` });
         }
+        const entry = list.find((c) => c.code === row[codeKey]);
+        if (entry && entry.prov) row.provisional.push(label);
       }
-      if (master.benefits && master.benefits.length) {
-        for (const [codeKey, field, label] of [['benefitCode', 'code', '구보장급부'], ['riskBenefitCode', 'riskCode', '위험급부']]) {
-          if (row[codeKey] && !master.benefits.some((b) => b[field] === row[codeKey])) {
-            flags.push({ level: 'warn', reason: `${label}코드 ${row[codeKey]}는 코드표에 없어 비웠습니다.` });
-            row[codeKey] = '';
-          }
+      const benefits = master.benefits || (master.benefits = []);
+      for (const [codeKey, field, nameKey, label] of [['benefitCode', 'code', 'benefit', '구보장급부'], ['riskBenefitCode', 'riskCode', 'riskBenefit', '위험급부']]) {
+        if (row[codeKey] && !benefits.some((b) => b[field] === row[codeKey])) {
+          if (benefits.length || prov) flags.push({ level: 'warn', reason: `${label}코드 ${row[codeKey]}는 코드표에 없어 비웠습니다.` });
+          row[codeKey] = '';
         }
-        const b = master.benefits.find((x) => x.name === row.benefit);
-        if (b && !row.benefitCode) row.benefitCode = b.code;
-        if (b && !row.riskBenefitCode && b.riskCode) row.riskBenefitCode = b.riskCode;
-        if (!b && !row.benefitCode) flags.push({ level: 'warn', reason: `구보장급부 "${row.benefit}"이(가) 코드표에 없습니다.` });
+        const b = benefits.find((x) => (field === 'code' ? x.name : x.riskName) === row[nameKey]);
+        if (b && !row[codeKey]) row[codeKey] = b[field];
+        if (!row[codeKey] && prov && row[nameKey]) {
+          // 임시 급부코드: TMP-B(대분류 머리글자)(순번), 위험급부는 TMP-R…
+          const head = `TMP-${field === 'code' ? 'B' : 'R'}${BENEFIT_PREFIX[categorize(row.benefit)]}`;
+          const n = benefits.filter((x) => String(x[field]).startsWith(head)).length + 1;
+          const code = `${head}${String(n).padStart(3, '0')}`;
+          const rec = b || { code: '', name: row.benefit, riskCode: '', riskName: row.riskBenefit, prov: true, added: true };
+          rec[field] = code;
+          if (!b) benefits.push(rec);
+          row[codeKey] = code;
+          out.stats.newCodes += 1;
+        } else if (!row[codeKey] && benefits.length && codeKey === 'benefitCode') {
+          flags.push({ level: 'warn', reason: `구보장급부 "${row.benefit}"이(가) 코드표에 없습니다.` });
+        }
+        const entry = benefits.find((x) => x[field] === row[codeKey]);
+        if (entry && entry.prov) row.provisional.push(label);
       }
-      // 규칙 5: 사인그룹 코드가 없으면 룰 행 대신 심사자 수기로 보냅니다.
+      // 규칙 5: 사인그룹이 정해지지 않으면 룰 행 대신 심사자 수기로 보냅니다.
       if (!row.signGroupCode) {
+        out.stats.toManual += 1;
         out.manual.push({ subject: `${row.benefit} ${row.accident} ${row.calcCondition}`.trim(), ref: evidence[0].ref, text: evidence[0].text, reason: '사인그룹 코드표에 대응 코드가 없어 룰 행을 만들지 않았습니다.' });
         continue;
       }
+      if (row.provisional.length) {
+        flags.push({ level: 'yellow', reason: `임시 코드(${row.provisional.join('·')})를 썼습니다. 실제 ECS 코드표로 바꿔야 합니다.`, test: '실제 코드표를 올린 뒤 다시 분석해 코드가 모두 채워지는지 확인합니다.' });
+      }
+      row.codeNote = row.provisional.length ? `임시: ${row.provisional.join('·')}` : '';
       if (!/^[\s\[\]가-힣\w.*+\-/(),]+$/.test(row.formula) || (row.formula.match(/\[/g) || []).length !== (row.formula.match(/\]/g) || []).length) {
         flags.push({ level: 'red', reason: `상세계산식 "${row.formula}"의 형식이 올바르지 않습니다.`, test: 'ECS 계산식 검증 화면에서 산식이 오류 없이 해석되는지 확인합니다.' });
       }
       row.calcTarget = row.calcTarget || [...new Set([...row.formula.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]))].join(', ');
+      out.stats.kept += 1;
       out.rows.push(row);
     }
 
     for (const m of Array.isArray(ai.manual) ? ai.manual : []) {
       if (!m) continue;
-      const ok = inSource(m.quote);
+      const ok = matchQuote(m.quote, text);
       out.manual.push({ subject: str(m.subject), ref: refOf(m.ref), text: str(m.quote), reason: str(m.reason) + (ok ? '' : ' (인용문이 원문과 일치하지 않습니다. 조항을 직접 확인하십시오.)') });
     }
     for (const m of Array.isArray(ai.missing) ? ai.missing : []) {
@@ -438,7 +509,9 @@ ${JSON.stringify(OUTPUT_EXAMPLE)}`;
         missing.push({ subject: name, ref: '', reason: 'AI 결과에 이 담보가 없습니다. 해당 구간을 다시 분석하거나 수기로 확인하십시오.' });
       }
     }
-    return { rows, manual, missing };
+    const stats = { proposed: 0, kept: 0, toManual: 0, noEvidence: 0, partialQuotes: 0, newCodes: 0 };
+    for (const p of parts) for (const k of Object.keys(stats)) stats[k] += (p.stats && p.stats[k]) || 0;
+    return { rows, manual, missing, stats };
   }
 
   return {

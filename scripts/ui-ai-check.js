@@ -34,7 +34,7 @@ const XLSX = require('xlsx');
   console.log('수술 대분류 선택 후:', await page.locator('#pickInfo').innerText(), '/ 수술 펼침 유지:', await page.$eval('#catalog input[data-cat="수술"]', (x) => x.closest('details').open));
   console.log('선택 담보:', await page.$$eval('#catalog input[data-id]:checked', (xs) => xs.map((x) => x.dataset.id)));
   await page.click('#btnAi');
-  await page.waitForFunction(() => /AI 분석:/.test(document.getElementById('status').textContent));
+  await page.waitForFunction(() => /AI 분석 \d+\/\d+개 구간/.test(document.getElementById('status').textContent));
   console.log('AI 결과:', await page.locator('#status').innerText());
   const prompts = await page.evaluate(() => window.__prompts);
   console.log('호출 수:', prompts.length, '/ 모델:', prompts[0].tier, '/ 지시문에 수술분류표 포함:', prompts[0].prompt.includes('[별표 4] 수술분류표'));
@@ -47,6 +47,8 @@ const XLSX = require('xlsx');
   const saved = await page.evaluate(() => window.__saved);
   const book = XLSX.read(Buffer.from(saved.bytes), { type: 'buffer' });
   console.log('저장 파일:', saved.filename, '/ 시트:', book.SheetNames.join(', '));
+  if (book.Sheets['임시코드표']) console.log('임시코드표:', JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets['임시코드표'], { header: 1 }).slice(-4)));
+  console.log('룰테이블 코드상태:', JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets['룰테이블']).map((r) => [r['사인그룹코드'], r['구보장급부코드'], r['코드상태']])));
   console.log('분석정보:', JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets['분석정보'], { header: 1 }).slice(2, 6)));
   // 실제 약관 형태(목차·쪽 머리글·표 형식 지급사유) 텍스트로 담보 목록과 대분류·전체 선택을 확인합니다.
   await page.fill('#terms', fs.readFileSync(path.join(__dirname, '..', 'test', 'fixtures', 'realistic-policy.txt'), 'utf8'));

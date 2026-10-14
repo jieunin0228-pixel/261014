@@ -26,6 +26,7 @@
   function renderMaster() {
     const m = state.master;
     $('masterInfo').textContent = `${m.source} · 사인그룹 ${m.signGroups.length} · 급부 ${m.benefits.length} · 변수 ${m.variables.length}`;
+    $('masterInfo').classList.toggle('warnText', !!m.provisional);
   }
 
   async function uploadMaster(file) {
@@ -176,8 +177,11 @@
     $('btnStop').hidden = true;
     updatePickInfo();
     const r = A.finalize(parts, state.master, stopped ? [] : names);
-    show(r, { mode: `AI 분석(${$('tier').selectedOptions[0].text})`, coverage, master: state.master.source, sections: calls.map((c) => c.label).join(', ') },
-      `${stopped ? `${stopped} ` : ''}AI 분석: ${parts.length}/${calls.length}개 구간에서 룰 ${r.rows.length}행, 심사자 수기 ${r.manual.length}건, 근거 없음 ${r.missing.length}건입니다. 모든 행은 원문 인용과 코드표로 검증했습니다.`);
+    const st = r.stats;
+    const statLine = `Claude 제안 ${st.proposed}행 → 룰 ${st.kept}행, 사인그룹 없음(수기) ${st.toManual}행, 원문 불일치(근거 없음) ${st.noEvidence}행${st.partialQuotes ? `, 인용 일부 일치 ${st.partialQuotes}건` : ''}${st.newCodes ? `, 새 임시 코드 ${st.newCodes}개` : ''}`;
+    show(r, { mode: `AI 분석(${$('tier').selectedOptions[0].text})`, coverage, master: state.master.source, sections: calls.map((c) => c.label).join(', '), stats: statLine },
+      `${stopped ? `${stopped} ` : ''}AI 분석 ${parts.length}/${calls.length}개 구간: ${statLine}.${state.master.provisional ? ' 임시 코드표로 분석했으므로 코드는 실제 ECS 코드가 아닙니다.' : ''}`);
+    renderMaster();
   }
 
   // ───────── 결과 표시 ─────────
@@ -204,7 +208,7 @@
   }
 
   // 화면은 검토 순서(산식·표시 우선)로 보여 주고, 엑셀은 S.RULE_COLUMNS 의 ECS 순서를 따릅니다.
-  const TABLE_COLS = ['no', 'category', 'claim', 'benefit', 'accident', 'signGroupCode', 'calcCondition', 'formula', 'status', 'flagText', 'citations', 'benefitCode', 'riskBenefit', 'signGroup', 'calcTarget', 'testText'];
+  const TABLE_COLS = ['no', 'category', 'claim', 'benefit', 'accident', 'signGroupCode', 'codeNote', 'calcCondition', 'formula', 'status', 'flagText', 'citations', 'benefitCode', 'riskBenefit', 'signGroup', 'calcTarget', 'testText'];
   const label = (k) => S.RULE_COLUMNS.find((c) => c.key === k).label;
 
   function renderRules() {
@@ -217,6 +221,7 @@
         if (k === 'category') return `<td><span class="badge b-${esc(v)}">${esc(v)}</span></td>`;
         if (k === 'status') return `<td><span class="badge b-${esc(v === '소멸' ? '소멸' : v === '확인필요' ? '확인필요' : '정상')}">${esc(v)}</span> ${esc(r.statusCode)}</td>`;
         if (k === 'formula' || k === 'calcCondition') return `<td class="mono">${esc(v)}</td>`;
+        if (k === 'codeNote') return `<td>${v ? `<span class="tmp" title="실제 ECS 코드가 아닌 임시 코드입니다">${esc(v)}</span>` : ''}</td>`;
         if (k === 'flagText' || k === 'testText') return `<td class="wrap">${esc(v)}</td>`;
         if (k === 'citations') return `<td class="wrap">${esc(String(v).replace(/ \/ /g, '\n'))}</td>`;
         return `<td>${esc(v)}</td>`;
@@ -263,6 +268,20 @@
     }
   }
 
+  // 임시 코드표 중 지어낸 코드(prov)만 모아, 실제 코드와 대조할 수 있게 내보냅니다.
+  function provisionalAoa() {
+    const m = state.master;
+    const rows = [['구분', '임시 코드', '명칭', '설명', '실제 ECS 코드(기입)']];
+    const add = (label, list) => { for (const c of list || []) if (c.prov) rows.push([label, c.code, c.name, c.added ? 'AI 결과에서 새로 만든 코드' : (c.desc || ''), '']); };
+    add('청구사유', m.claims); add('사고유형', m.accidents); add('사인그룹', m.signGroups); add('계약상태', m.statuses);
+    for (const b of m.benefits || []) {
+      if (!b.prov) continue;
+      if (b.code) rows.push(['구보장급부', b.code, b.name, 'AI 결과에서 새로 만든 코드', '']);
+      if (b.riskCode) rows.push(['위험급부', b.riskCode, b.riskName, 'AI 결과에서 새로 만든 코드', '']);
+    }
+    return rows;
+  }
+
   async function downloadExcel() {
     const { rows, manual, missing } = state.result;
     const book = XLSX.utils.book_new();
@@ -276,8 +295,11 @@
     const m = state.meta;
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
       ['항목', '값'], ['작성일시', new Date().toLocaleString('ko-KR')], ['분석 방식', m.mode], ['담보', m.coverage],
-      ['분석 구간', m.sections || ''], ['코드표', m.master], ['주의', 'AI 분석 결과는 원문 인용과 코드표로 검증했으나, ECS 반영 전 심사자 확인이 필요합니다.'],
+      ['분석 구간', m.sections || ''], ['코드표', m.master], ['검증 내역', m.stats || ''],
+      ['주의', 'AI 분석 결과는 원문 인용과 코드표로 검증했으나, ECS 반영 전 심사자 확인이 필요합니다.'],
+      ...(state.master.provisional ? [['임시 코드', "코드상태 열에 '임시'로 표시된 코드는 실제 ECS 코드가 아닙니다. 임시코드표 시트를 실제 코드와 대조해 바꿔야 합니다."]] : []),
     ]), '분석정보');
+    if (state.master.provisional) XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(provisionalAoa()), '임시코드표');
     await saveBook(book, `ECS_룰테이블_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 

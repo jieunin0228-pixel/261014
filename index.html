@@ -108,6 +108,8 @@
   .cmp-일치 td { background: var(--ok); } .cmp-불일치 td { background: var(--ex); }
   .cmp-정답지에만 td, .cmp-생성에만 td { background: var(--cut); }
   .diff { color: var(--ex-b); font-weight: 700; }
+  .tmp { display: inline-block; padding: 0 6px; border-radius: 8px; border: 1px dashed var(--accent); color: var(--accent); font-size: 12px; white-space: nowrap; }
+  .warnText { color: var(--accent); }
   @media (max-width: 900px) { html, body { height: auto; } main { grid-template-columns: 1fr; } section { min-height: 60vh; } }
 </style>
 </head>
@@ -167,7 +169,7 @@
       <span><i class="sw" style="background:var(--cut);border-color:var(--cut-b)"></i>감액</span>
       <span><i class="sw" style="background:var(--ex);border-color:var(--ex-b)"></i>면책</span>
       <span><i class="sw" style="background:var(--end-b);border-color:var(--end-b)"></i>소멸(계약상태처리 열)</span>
-      <span>🔴 금액 오산출 위험 · 🟡 매핑·중복 점검 · ⚠ 문언상 확정 불가</span>
+      <span>🔴 금액 오산출 위험 · 🟡 매핑·중복 점검 · ⚠ 문언상 확정 불가 · <span class="tmp">임시</span> 실제 ECS 코드 아님</span>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab on" data-view="rules">룰 테이블</button>
