@@ -9,6 +9,15 @@
 - 3·4단계는 Claude API를 쓰며, API 키가 없으면 실행 단추가 잠깁니다(1·2·5단계는 키 없이 동작).
 - 이 폴더(`terms_tool_newton`)는 다른 작업 세션의 결과물과 섞이지 않도록 따로 둔 폴더입니다.
 
+## 설치 없이 쓰는 방법 (claude.ai 아티팩트)
+
+설치가 어려우면 claude.ai에 올려 둔 아티팩트 판을 브라우저에서 바로 열어 쓸 수 있습니다: https://claude.ai/artifact/JLWd6DaHDA8JoTGFgQvcqd
+
+- 원본은 `artifact/` 폴더에 있으며, `python3 artifact/build.py`로 `artifact/index.html`을 다시 만듭니다.
+- PDF 변환(1단계)은 브라우저 안에서 pdf.js로 처리하며 약관 파일을 밖으로 보내지 않습니다.
+- 약관과 결과는 그 브라우저의 저장소(IndexedDB)에만 남습니다. 다른 브라우저나 다른 PC에서는 보이지 않습니다.
+- 3·4단계의 AI 해석은 API 키 대신 화면을 연 사람의 Claude 계정으로 호출하며, 이때 해당 담보의 조문 원문이 Claude로 전송됩니다.
+
 ## 설치와 실행
 
 ### 맥(Mac) (권장 방법: 두 번 클릭)

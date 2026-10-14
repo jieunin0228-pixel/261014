@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>약관 구조화 도구</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">약관 구조화 도구 <span class="stage">1단계 · 변환과 검증</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="docs" class="on">문서</button>
+    <button data-tab="report">품질 보고서</button>
+    <button data-tab="verify">검증</button>
+    <button data-tab="classify">담보 분류 <span class="stage">2단계</span></button>
+    <button data-tab="analysis">결과 카드·ECS 초안 <span class="stage">3·4단계</span></button>
+    <button data-tab="compare">구약관 비교 <span class="stage">5단계</span></button>
+  </nav>
+  <div class="who">
+    <span id="docName" class="docname">문서를 선택하세요</span>
+    <span id="apprBadge" class="badge gray">미승인</span>
+    <label>작업자 <input id="user" placeholder="이름" size="7"></label>
+  </div>
+</header>
+
+<main>
+  <!-- 문서 -->
+  <section id="tab-docs" class="tab on">
+    <div class="card">
+      <h2>약관 PDF 올리기</h2>
+      <p class="hint">변환은 이 브라우저 안에서만 이루어지며 외부로 전송하지 않습니다. 결과는 이 브라우저(이 PC)에만 저장되고, 같은 PDF를 다시 올리면 이전 변환 결과를 사용합니다. 1,500쪽 약관은 2~3분 걸립니다.</p>
+      <div class="row">
+        <input type="file" id="pdfFile" accept=".pdf,application/pdf">
+        <button id="btnUpload" class="primary">변환 시작</button>
+        <label class="chk"><input type="checkbox" id="forceConv"> 캐시 무시하고 다시 변환</label>
+      </div>
+      <div id="progress" class="progress hidden">
+        <div class="bar"><div id="progBar"></div></div>
+        <div id="progText" class="hint"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>저장된 문서</h2>
+      <table class="grid" id="docList"><thead><tr><th>파일명</th><th>쪽수</th><th>등록</th><th>변환</th><th>승인</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card" id="historyCard">
+      <h2>수정 이력 <span class="hint">(현재 문서)</span></h2>
+      <table class="grid" id="editList"><thead><tr><th>시각</th><th>작업자</th><th>수정</th><th>담보</th><th>내용</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- 품질 보고서 -->
+  <section id="tab-report" class="tab">
+    <div id="reportBody"><p class="hint">문서를 먼저 선택하세요.</p></div>
+  </section>
+
+  <!-- 검증 -->
+  <section id="tab-verify" class="tab">
+    <div class="verify">
+      <aside class="covlist">
+        <input id="covSearch" placeholder="담보 검색">
+        <select id="covType"><option value="">전체 유형</option></select>
+        <select id="covReview"><option value="">전체 검토상태</option><option>미검토</option><option>검토완료</option></select>
+        <div id="covItems"></div>
+      </aside>
+      <div class="viewer">
+        <div class="vbar">
+          <button id="pPrev">◀</button>
+          <input id="pNum" size="5"> <span id="pTotal"></span>
+          <button id="pNext">▶</button>
+          <button id="zOut">－</button><button id="zIn">＋</button>
+          <button id="toStart" title="선택한 담보의 시작 쪽">담보 시작쪽</button>
+          <label class="chk"><input type="checkbox" id="editMode"> 조문 경계 수정</label>
+          <label class="chk"><input type="checkbox" id="showTables" checked> 표 영역</label>
+        </div>
+        <div id="pageInfo" class="pageinfo"></div>
+        <div class="pagewrap" id="pageWrap">
+          <div class="pagebox" id="pageBox"><img id="pageImg" alt=""><div id="overlay"></div></div>
+        </div>
+      </div>
+      <div class="panel" id="panel"><p class="hint">왼쪽에서 담보를 고르세요.</p></div>
+    </div>
+  </section>
+</main>
+
+  <!-- 담보 분류 (2단계) -->
+  <section id="tab-classify" class="tab">
+    <div id="clsBanner"></div>
+    <div class="card">
+      <div class="row">
+        <button id="clsGen" class="primary">자동 구성(규칙·기억)</button>
+        <button id="clsReset">처음부터 다시 구성</button>
+        <button id="clsAi">AI 분류 제안</button>
+        <button id="clsApplyAll">근거 확인된 AI 제안 모두 적용</button>
+        <span class="hint" id="clsSelInfo"></span>
+        <button id="clsX">엑셀(선택 담보)</button><button id="clsJ">JSON(선택 담보)</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="clsSearch" placeholder="담보 검색">
+        <label class="chk"><input type="checkbox" id="clsOnlyDiff"> AI 제안이 현재 분류와 다른 담보만</label>
+        <label class="chk"><input type="checkbox" id="clsOnlyTodo"> 미검토만</label>
+        <span class="hint">체크박스는 3단계 이후 분석할 담보 선택입니다. 상위 분류를 체크하면 하위 담보가 모두 선택됩니다.</span>
+      </div>
+      <div id="clsProg" class="progress hidden"><div class="bar"><div id="clsBar"></div></div><div id="clsProgText" class="hint"></div></div>
+    </div>
+    <div id="clsTree" class="card"><p class="hint">문서를 먼저 선택하세요.</p></div>
+  </section>
+
+  <!-- 결과 카드·ECS 초안 (3·4단계) -->
+  <section id="tab-analysis" class="tab">
+    <div id="anBanner"></div>
+    <div class="card">
+      <div class="row">
+        <b>상품 정보</b>
+        <label>상품코드 <input id="pCode" size="8"></label>
+        <label>상품명 <input id="pName" size="24"></label>
+        <label>판매개시일자 <input id="pDate" size="9" placeholder="20260501"></label>
+        <button id="pSave">저장</button>
+        <span class="hint">ECS 초안의 상품코드·상품명·판매개시일자 칸에 들어갑니다(약관에서 읽지 않음).</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <b>코드마스터</b> <span id="mStatus" class="hint"></span>
+        <input type="file" id="mFile" accept=".xlsx">
+        <button id="mUpload">올리기</button>
+        <button id="mTemplate">양식 내려받기</button>
+      </div>
+    </div>
+    <div class="verify an">
+      <aside class="covlist">
+        <label class="chk"><input type="checkbox" id="anOnlySel" checked> 2단계에서 선택한 담보만</label>
+        <input id="anSearch" placeholder="담보 검색">
+        <label class="chk"><input type="checkbox" id="anAll"> 목록 전체 체크</label>
+        <div id="anItems"></div>
+        <div class="row">
+          <button id="anCards">결과 카드 만들기</button>
+          <button id="anEcs">ECS 초안 만들기</button>
+          <button id="anBoth" class="primary">둘 다</button>
+        </div>
+        <label class="chk">분석 정밀도 <select id="anTier"><option value="default">표준(권장)</option><option value="complex">정밀(느리고 사용량 많음)</option></select></label>
+        <div id="anProg" class="progress hidden"><div class="bar"><div id="anBar"></div></div><div id="anProgText" class="hint"></div></div>
+      </aside>
+      <div class="panel" id="anPanel" style="grid-column: span 2"><p class="hint">왼쪽에서 담보를 고르세요.</p></div>
+    </div>
+  </section>
+
+  <!-- 구약관 비교 (5단계) -->
+  <section id="tab-compare" class="tab">
+    <div class="card">
+      <div class="row">
+        <b>비교 기준(구약관)</b>
+        <select id="cmpOld"></select>
+        <button id="cmpRun" class="primary">비교 실행</button>
+        <label class="chk"><input type="checkbox" id="cmpOnlyChanged" checked> 변경된 담보만 보기</label>
+        <button id="cmpX">엑셀(수정 전/수정 후)</button>
+      </div>
+      <p class="hint">구약관 PDF도 [문서] 탭에서 올려 1단계 변환·검증·승인을 마쳐야 목록에 나타납니다. 의미 변경 여부는 확정하지 않고 의견만 표시합니다.</p>
+      <div id="cmpSummary"></div>
+    </div>
+    <div class="card"><div id="cmpTable"></div></div>
+    <div class="card" id="cmpDetail"></div>
+  </section>
+
+<dialog id="dlg">
+  <form method="dialog" id="dlgForm">
+    <h3 id="dlgTitle"></h3>
+    <div id="dlgBody"></div>
+    <div class="row end"><button value="cancel">취소</button><button id="dlgOk" value="ok" class="primary">확인</button></div>
+  </form>
+</dialog>
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+<script src="classify.js"></script>
+<script src="analysis.js"></script>
+<script src="compare.js"></script>
+</body>
+</html>
