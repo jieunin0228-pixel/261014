@@ -247,6 +247,31 @@ async function doEdit(body, okMsg) {
   } catch (e) { toast("수정 실패: " + e.message, 5000); }
 }
 
+// 확인·입력 대화상자(브라우저 기본 confirm·prompt 대신; claude.ai 아티팩트에서는 기본 창이 열리지 않습니다)
+function askConfirm(message, okLabel = "계속") {
+  return new Promise((resolve) => {
+    $("#modalBox").innerHTML = `<p style="white-space:pre-wrap">${esc(message)}</p>
+      <div class="row"><button class="btn" id="askCancel">취소</button><button class="btn primary" id="askOk">${esc(okLabel)}</button></div>`;
+    $("#modal").hidden = false;
+    const done = (v) => { $("#modal").hidden = true; resolve(v); };
+    $("#askCancel").onclick = () => done(false);
+    $("#askOk").onclick = () => done(true);
+    $("#askOk").focus();
+  });
+}
+function askText(label, value = "") {
+  return new Promise((resolve) => {
+    $("#modalBox").innerHTML = `<label>${esc(label)} <input id="askInput" size="40" value="${esc(value)}"></label>
+      <div class="row"><button class="btn" id="askCancel">취소</button><button class="btn primary" id="askOk">확인</button></div>`;
+    $("#modal").hidden = false;
+    const done = (v) => { $("#modal").hidden = true; resolve(v); };
+    $("#askCancel").onclick = () => done(null);
+    $("#askOk").onclick = () => done($("#askInput").value);
+    $("#askInput").addEventListener("keydown", (e) => { if (e.key === "Enter") done($("#askInput").value); });
+    $("#askInput").focus();
+  });
+}
+
 function metaDialog(n, title, onOk) {
   const box = $("#modalBox");
   box.innerHTML = `<h3>${esc(title)}</h3>
@@ -285,7 +310,7 @@ $("#textPane").addEventListener("click", async (ev) => {
   if (["merge_prev", "line_to_prev", "line_to_next"].includes(act)) {
     const label = { merge_prev: "이 조각을 앞 조각에 합칩니다", line_to_prev: "첫 줄을 앞 조각으로 보냅니다",
       line_to_next: "마지막 줄을 다음 조각으로 보냅니다" }[act];
-    if (confirm(`${n.cid}: ${label}. 계속할까요?`)) await doEdit({ op: act, uid });
+    if (await askConfirm(`${n.cid}: ${label}. 계속할까요?`)) await doEdit({ op: act, uid });
   }
 });
 $("#textPane").addEventListener("mouseover", (ev) => {
@@ -364,7 +389,7 @@ async function renderHistory() {
     ${edits.slice().reverse().map((e) => `<tr class="click" data-page="${e.page || ""}" data-cid="${esc(e.cid_after || "")}"><td>${esc(e.ts)}</td><td>${esc(e.user)}</td><td>${opName[e.op] || esc(e.op)}</td>
       <td>${esc(e.cid)}${e.cid_after && e.cid_after !== e.cid ? ` → ${esc(e.cid_after)}` : ""}</td><td>${show(e.before)}</td><td>${show(e.after)}</td></tr>`).join("")}</table>`;
   $("#resetBtn").onclick = async () => {
-    if (!confirm("모든 수정을 버리고 변환 직후 상태로 되돌립니다. 이력은 남습니다. 계속할까요?")) return;
+    if (!await askConfirm("모든 수정을 버리고 변환 직후 상태로 되돌립니다. 이력은 남습니다. 계속할까요?")) return;
     state.summary = await post(`/api/docs/${state.doc}/reset`, {}); renderSummary(); renderHistory(); toast("되돌렸습니다.");
   };
 }
@@ -383,7 +408,7 @@ function renderFiles() {
     ${f("edits.json", "수정 이력")}${f("status.json", "승인 상태와 이력")}</table>
     <p><button class="btn" id="reconvertBtn">같은 PDF를 처음부터 다시 변환</button> <span class="muted">수정 이력과 승인이 초기화됩니다.</span></p>`;
   $("#reconvertBtn").onclick = async () => {
-    if (!confirm("다시 변환하면 지금까지의 수정과 승인이 사라집니다. 계속할까요?")) return;
+    if (!await askConfirm("다시 변환하면 지금까지의 수정과 승인이 사라집니다. 계속할까요?")) return;
     await post(`/api/docs/${state.doc}/reconvert`, {});
     try { await waitConvert(state.doc); await openDoc(state.doc); toast("다시 변환했습니다."); } catch (e) { toast("변환 실패: " + e.message, 5000); }
   };
@@ -540,7 +565,7 @@ $("#covTree").addEventListener("click", async (ev) => {
   const id = b.closest(".leaf").dataset.id;
   const it = cov.data.items.find((i) => i.id === id);
   if (b.dataset.cov === "more") { cov.more.has(id) ? cov.more.delete(id) : cov.more.add(id); drawCoverageTree(); }
-  if (b.dataset.cov === "rename") { const n = prompt("새 담보명", it.name); if (n && n.trim() && n.trim() !== it.name) covEdit({ op: "rename", id, name: n.trim() }); }
+  if (b.dataset.cov === "rename") { const n = await askText("새 담보명", it.name); if (n && n.trim() && n.trim() !== it.name) covEdit({ op: "rename", id, name: n.trim() }); }
   if (b.dataset.cov === "move") covMoveDialog([id]);
   if (b.dataset.cov === "src") { switchTab("verify"); gotoPage(b.dataset.page, b.dataset.cid); }
 });
@@ -552,7 +577,7 @@ const covExport = (fmt) => { location.href = `/api/docs/${state.doc}/coverage/ex
 $("#covXlsx").onclick = () => covExport("xlsx");
 $("#covJson").onclick = () => covExport("json");
 $("#covRebuild").onclick = async () => {
-  if (!confirm("승인된 1단계 결과로 담보를 다시 찾습니다. 이동·이름 수정·선택은 같은 담보에 그대로 이어 붙입니다. 계속할까요?")) return;
+  if (!await askConfirm("승인된 1단계 결과로 담보를 다시 찾습니다. 이동·이름 수정·선택은 같은 담보에 그대로 이어 붙입니다. 계속할까요?")) return;
   try { await post(`/api/docs/${state.doc}/coverage/rebuild`, { keep_user: true }); await renderCoverage(); toast("다시 만들었습니다."); }
   catch (e) { toast("실패: " + e.message, 5000); }
 };
@@ -606,7 +631,7 @@ function drawSumProgress() {
 
 async function runSummaries(ids, force) {
   if (!ids.length) { toast("요약할 담보가 없습니다."); return; }
-  if (!confirm(`담보 ${ids.length}개를 Claude(${sum.status.model})로 요약합니다. 담보 하나당 해당 특약 조문(보통 2~4만 자)을 보내며 API 사용료가 발생합니다.${force ? " 이미 만든 요약은 새로 만듭니다." : " 이미 요약한 담보는 건너뜁니다."} 계속할까요?`)) return;
+  if (!await askConfirm(`담보 ${ids.length}개를 Claude(${sum.status.model})로 요약합니다. 담보 하나당 해당 특약 조문(보통 2~4만 자)을 보내며 API 사용료가 발생합니다.${force ? " 이미 만든 요약은 새로 만듭니다." : " 이미 요약한 담보는 건너뜁니다."} 계속할까요?`)) return;
   try { await post(`/api/docs/${state.doc}/summaries/run`, { ids, force }); }
   catch (e) { toast("실행하지 못했습니다: " + e.message, 6000); return; }
   sum.status = await api(`/api/docs/${state.doc}/summaries`);
@@ -697,7 +722,7 @@ $("#approveBtn").onclick = async () => {
   if (!state.doc) return;
   const st = state.summary.status;
   if (st.approved) {
-    if (!confirm("승인을 해제합니다. 계속할까요?")) return;
+    if (!await askConfirm("승인을 해제합니다. 계속할까요?")) return;
     state.summary.status = await post(`/api/docs/${state.doc}/approve`, { approved: false, note: "수동 해제" });
     renderSummary(); return;
   }
@@ -706,7 +731,7 @@ $("#approveBtn").onclick = async () => {
   const lines = [["조문 번호 연속성", c.article_gaps], ["항·호·목 번호 끊김·중복", c.sub_gaps], ["참조 미해결", c.unresolved],
     ["표 추출 불완전", c.bad_tables], ["표 재구성(원본 대조 권장)", c.rebuilt_tables], ["텍스트 거의 없는 쪽", c.low_text], ["OCR 저신뢰", c.ocr_low]]
     .map(([k, v]) => `${k}: ${v || 0}건`).join("\n");
-  if (!confirm(`남아 있는 경고\n${lines}\n\n원본과 대조를 마쳤고, 위 경고를 확인했다면 승인합니다. 승인해야 다음 단계(담보 분류·AI 해석)로 넘어갈 수 있습니다.\n승인 후 수정하면 승인은 자동으로 해제됩니다.`)) return;
+  if (!await askConfirm(`남아 있는 경고\n${lines}\n\n원본과 대조를 마쳤고, 위 경고를 확인했다면 승인합니다. 승인해야 다음 단계(담보 분류·AI 해석)로 넘어갈 수 있습니다.\n승인 후 수정하면 승인은 자동으로 해제됩니다.`)) return;
   state.summary.status = await post(`/api/docs/${state.doc}/approve`, { approved: true, note: "" });
   renderSummary(); toast("변환을 승인했습니다.");
 };

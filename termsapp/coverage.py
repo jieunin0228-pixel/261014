@@ -95,6 +95,16 @@ def benefits_from_table(rows):
         return []
     head = " ".join(join_text(c) for c in rows[0])
     body = [[str(c) for c in r] for r in (rows[1:] if ("급부" in head or "지급사유" in head) else rows)]
+    # 하위 표가 이어 붙은 경우의 반복 머리줄과 '나. 2종 보장계약' 같은 소제목 줄은 뺍니다.
+    def keep(r):
+        j = " ".join(join_text(c) for c in r)
+        if "급부명" in j and "지급사유" in j:
+            return False
+        filled = [c for c in r if c.strip()]
+        if len(filled) == 1 and re.match(r"^[가-하]\.\s", filled[0].strip()):
+            return False
+        return not (j.strip().endswith("보장계약") and len(j.strip()) < 40 and "피보험자" not in j)
+    body = [r for r in body if keep(r)]
     if not body:
         return []
     ncol = max(len(r) for r in body)
@@ -103,13 +113,17 @@ def benefits_from_table(rows):
     rc = max(range(ncol), key=lambda c: (score[c], -c))
     if score[rc] == 0:
         return []
-    starts = [k for k, r in enumerate(body) if "피보험자" in r[rc]]
+    # 지급사유 칸이 '피보험자'로 시작하는 행이 새 급부의 시작입니다(칸 중간의 '또는 피보험자가'는 아님).
+    starts = [k for k, r in enumerate(body) if r[rc].strip().startswith("피보험자")]
+    if not starts:
+        return []
     name_cols = [c for c in range(rc) if any(r[c].strip() for r in body)]
     amt_cols = [c for c in range(rc + 1, ncol) if any(r[c].strip() for r in body)]
-    group_col = name_cols[0] if len(name_cols) >= 2 else None
-    sub_cols = name_cols[1:] if group_col is not None else name_cols
-    # 맨 왼쪽 열(급부 그룹)은 하위 급부명이 비었을 때만 이름으로 씁니다.
-    group = clean_name("\n".join(r[group_col] for r in body if r[group_col].strip())) if group_col is not None else ""
+    # 지급사유 열 바로 왼쪽(가장 오른쪽) 칸이 하위 급부명, 그 왼쪽 칸들은 급부 그룹입니다.
+    sub_cols = name_cols[-1:]
+    group_cols = name_cols[:-1]
+    group_col = group_cols[0] if group_cols else None
+    group = clean_name("\n".join(r[c] for r in body for c in group_cols if r[c].strip()))
     out = []
     for i, st in enumerate(starts):
         a = 0 if i == 0 else st
@@ -121,9 +135,18 @@ def benefits_from_table(rows):
         reason = join_text(" ".join(r[rc] for r in body[st:b] if r[rc].strip()))
         amount = " / ".join(" ".join(join_text(r[c]) for c in amt_cols if r[c].strip())
                             for r in block if any(r[c].strip() for c in amt_cols))
-        name = name or group
-        out.append({"group": re.sub(r"\s*[ⅠⅡⅢⅣⅤ]+$", "", name), "name": name, "reason": reason, "amount": amount})
-    return out
+        out.append({"name": name or group, "reason": reason, "amount": amount})
+    # 급부명이 '(요양병원'처럼 괄호가 닫히지 않았으면 지급사유 칸의 줄바꿈으로 잘못 나뉜 것이므로 다음 급부와 합칩니다.
+    merged = []
+    for b in out:
+        prev = merged[-1] if merged else None
+        if prev and prev["name"].count("(") > prev["name"].count(")"):
+            prev["name"] = clean_name(prev["name"] + "\n" + b["name"])
+            prev["reason"] = (prev["reason"] + " " + b["reason"]).strip()
+            prev["amount"] = " / ".join(x for x in (prev["amount"], b["amount"]) if x)
+        else:
+            merged.append(dict(b))
+    return [dict(b, group=re.sub(r"\s*[ⅠⅡⅢⅣⅤ]+$", "", b["name"])) for b in merged]
 
 
 KEY_TITLE_WORDS = ("용어의 정의", "정의", "지급사유", "지급에 관한 세부규정", "지급하지 않는", "보장개시",

@@ -5,6 +5,16 @@
 - **변환에는 AI를 쓰지 않습니다.** PyMuPDF로 글자 좌표를 읽고 정규식으로 분해합니다.
 - **약관은 이 PC 밖으로 나가지 않습니다.** 서버는 `127.0.0.1`에서만 열리고, 결과는 `data/` 폴더에만 저장합니다. 이 폴더와 PDF 파일은 Git에 올라가지 않도록 `.gitignore`에 넣었습니다.
 
+## claude.ai 아티팩트판(설치 없이 브라우저에서)
+
+https://claude.ai/artifact/EHU3QY33yGSiKCxuBUSRmV 를 claude.ai에 로그인한 브라우저로 열면 설치 없이 1~3단계를 쓸 수 있습니다(소유자만 열 수 있으며, 다른 사람은 소유자가 공유해야 열립니다).
+
+- **처리 방식:** PDF 변환(pdf.js)과 결과 저장(IndexedDB)은 모두 그 브라우저 안에서 합니다. 약관 파일과 결과는 외부 서버에 올라가지 않습니다.
+- **3단계 요약:** 보는 사람의 claude.ai 계정으로 Claude를 부르므로 API 키가 필요 없습니다. 처음 실행할 때 Claude 사용 허용 창이 뜹니다.
+- **결과 보관:** 브라우저 사이트 데이터를 지우면 결과도 지워지므로, [내려받기] 탭의 파일로 보관하십시오.
+- **로컬판과의 차이:** 같은 규칙을 JavaScript로 옮긴 것이며, 샘플 약관에서 조·항 수와 담보 141개가 로컬판과 같게 나옵니다. 표 칸 나누기는 방식이 달라 표 개수·표 경고 건수가 조금 다릅니다. 스캔 PDF의 OCR은 브라우저판에 없습니다.
+- **다시 게시:** `python scripts/build_web_artifact.py`로 `build/web/`을 만든 뒤 게시합니다. 화면은 로컬판(`termsapp/static`)을 바탕으로 만들고, 엔진은 `artifact/engine.js`, 저장·처리 계층은 `artifact/backend.js`입니다.
+
 ## 설치와 실행
 
 ### 회사 PC(설치 불필요판, 권장)
@@ -170,6 +180,8 @@ NODE_PATH=$(npm root -g) node scripts/ui_check.js <저장폴더>          # 1단
 NODE_PATH=$(npm root -g) node scripts/ui_check_stage2.js <저장폴더>   # 2단계 화면 점검
 NODE_PATH=$(npm root -g) node scripts/ui_check_stage3.js <저장폴더>   # 3단계 화면 점검(요약 1건 이상 저장된 상태)
 python scripts/build_portable.py   # 설치 불필요판 묶음 만들기(인터넷 필요, 보통은 GitHub Actions가 실행)
+python scripts/build_web_artifact.py   # claude.ai 아티팩트판 만들기(build/web)
+NODE_PATH=$(npm root -g) node scripts/ui_check_web.js <약관PDF> <저장폴더> <pdfjs-dist·xlsx가 있는 node_modules>   # 아티팩트판 점검
 ```
 
 | 경로 | 역할 |

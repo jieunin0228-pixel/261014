@@ -6,7 +6,7 @@ const out = process.argv[2] || ".";
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 }, acceptDownloads: true });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("dialog", (d) => d.accept(d.type() === "prompt" ? "점검용 담보명" : undefined));
+  const ok = async () => { await page.waitForSelector("#askOk"); await page.click("#askOk"); };
   await page.goto("http://127.0.0.1:8765/");
   await page.waitForSelector("#docSelect option[value]:not([value=''])", { state: "attached" });
   const id = await page.$eval("#docSelect option[value]:not([value=''])", (o) => o.value);
@@ -21,7 +21,7 @@ const out = process.argv[2] || ".";
   await page.waitForSelector("#covLocked:not([hidden])");
   console.log("승인 전:", (await page.textContent("#covLocked")).slice(0, 40));
   await page.fill("#reviewer", "검토자B");
-  await page.click("#approveBtn"); await page.waitForTimeout(800);
+  await page.click("#approveBtn"); await ok(); await page.waitForTimeout(800);
   // 이전 점검의 이동·이름 수정을 지우고 시작합니다.
   await page.evaluate((id) => fetch(`/api/docs/${id}/coverage/rebuild`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keep_user: false }) }), id);
@@ -39,7 +39,8 @@ const out = process.argv[2] || ".";
   const leaf = page.locator(".leaf").first();
   await leaf.locator("[data-cov=more]").click(); await page.waitForTimeout(200);
   await page.screenshot({ path: `${out}/ui-coverage.png` });
-  await page.locator(".leaf").first().locator("[data-cov=rename]").click(); await page.waitForTimeout(800);
+  await page.locator(".leaf").first().locator("[data-cov=rename]").click();
+  await page.fill("#askInput", "점검용 담보명"); await ok(); await page.waitForTimeout(800);
   console.log("이름 수정:", await page.locator(".leaf", { hasText: "점검용 담보명" }).count());
   await page.locator(".leaf", { hasText: "점검용 담보명" }).locator("[data-cov=move]").click();
   await page.selectOption("#mvMajor", "기타"); await page.fill("#mvMid", "점검중분류");

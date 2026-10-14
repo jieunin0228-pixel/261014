@@ -43,12 +43,12 @@ const out = process.argv[2] || ".";
   await page.click("#tabs button[data-tab=history]"); await page.waitForSelector("#historyBody table");
   console.log("이력 행:", await page.$$eval("#historyBody table:nth-of-type(2) tr", (r) => r.length - 1));
   // 승인
-  page.on("dialog", (d) => d.accept());
-  await page.click("#approveBtn"); await page.waitForTimeout(800);
+  const ok = async () => { await page.waitForSelector("#askOk"); await page.click("#askOk"); };
+  await page.click("#approveBtn"); await ok(); await page.waitForTimeout(800);
   console.log("승인 표시:", await page.textContent("#approvalBadge"));
   // 되돌리기
   await page.click("#tabs button[data-tab=history]"); await page.waitForSelector("#resetBtn");
-  await page.click("#resetBtn"); await page.waitForTimeout(2500);
+  await page.click("#resetBtn"); await ok(); await page.waitForTimeout(2500);
   console.log("되돌린 뒤 승인 표시:", await page.textContent("#approvalBadge"));
   // 구간
   await page.click("#tabs button[data-tab=sections]"); await page.waitForSelector("#sectionsBody table");
