@@ -1,2 +1,9 @@
+data/
+__pycache__/
+*.pyc
 node_modules/
 build/
+# 약관 원본은 저장소에 올리지 않습니다.
+*.pdf
+!legacy/samples/*.pdf
+!tests/fixtures/*.pdf
