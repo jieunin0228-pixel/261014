@@ -1,4 +1,4 @@
-> **새 약관 구조화 도구(1단계: 변환과 검증)는 [`terms_app/`](terms_app/README.md) 폴더에 있습니다.** 로컬 PC에서 실행하는 서버형 앱이며, 설치·실행 방법은 `terms_app/README.md`를 참고하세요. 아래는 이전에 만든 정적 웹앱(ECS 룰 변환기)의 설명입니다.
+> **새 약관 구조화 도구(1단계: 변환과 검증)는 [`terms_tool_newton/`](terms_tool_newton/README.md) 폴더에 있습니다.** 로컬 PC에서 실행하는 서버형 앱이며, 설치·실행 방법은 `terms_tool_newton/README.md`를 참고하세요. 아래는 이전에 만든 정적 웹앱(ECS 룰 변환기)의 설명입니다.
 
 # ECS 룰 변환기
 

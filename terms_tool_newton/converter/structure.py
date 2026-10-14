@@ -470,7 +470,7 @@ def classify(cov, nodes, order):
         return "특약공통"
     if waiver or ("납입면제" in name and not payout):
         return "납입면제류"
-    if re.search(r"서비스|인수|전환|지정대리", name):
+    if re.search(r"(서비스|인수|전환)특약|지정대리", name):  # '간호·간병통합서비스사용특약' 같은 보장 특약은 제외
         return "서비스·인수·전환류"
     if payout and "특약" not in name:
         return "보통약관"

@@ -99,6 +99,7 @@ async function openDoc(id) {
   renderReport();
   renderCovList();
   loadEdits();
+  if (window.clsLoad) window.clsLoad();
   if (!S.cov) gotoPage(1);
 }
 
@@ -115,6 +116,7 @@ async function refresh(keepCov = true) {
   S.summary = await api(`/api/docs/${S.doc}/summary`);
   S.report = await api(`/api/docs/${S.doc}/report`);
   renderApproval(); renderReport(); renderCovList(); loadEdits();
+  if (window.clsLoad) window.clsLoad();
   if (keepCov && cid) await openCov(cid, false);
 }
 
@@ -527,7 +529,7 @@ $("#apprBadge").addEventListener("click", async () => {
   if (a.approved) {
     if (!confirm("변환 승인을 취소합니다. 계속할까요?")) return;
     S.summary.approval = await post(`/api/docs/${S.doc}/approval`, { approved: false, user: user() });
-    renderApproval(); return;
+    renderApproval(); if (window.clsLoad) window.clsLoad(); return;
   }
   const r = S.report;
   const todo = S.summary.coverages.filter((c) => c.review.status !== "검토완료" && c.type !== "부속자료").length;
@@ -537,7 +539,7 @@ $("#apprBadge").addEventListener("click", async () => {
     <p class="hint">작업자: ${esc(user() || "(이름 미입력)")}</p>`);
   if (!ok) return;
   S.summary.approval = await post(`/api/docs/${S.doc}/approval`, { approved: true, user: user() });
-  renderApproval(); toast("변환을 승인했습니다.");
+  renderApproval(); toast("변환을 승인했습니다."); if (window.clsLoad) window.clsLoad();
 });
 $("#apprBadge").style.cursor = "pointer";
 $("#apprBadge").title = "눌러서 변환 승인 / 승인 취소";

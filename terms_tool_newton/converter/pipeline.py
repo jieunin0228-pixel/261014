@@ -131,6 +131,25 @@ def start_conversion(upload_path, filename, force=False):
     return job
 
 
+def start_task(doc_id, fn, label):
+    """오래 걸리는 작업(AI 호출 등)을 백그라운드로 돌리고 진행률을 남깁니다."""
+    job_id = uuid.uuid4().hex[:12]
+    job = {"id": job_id, "doc_id": doc_id, "done": False, "error": None, "stage": label, "frac": 0.0, "msg": ""}
+    _jobs[job_id] = job
+
+    def run():
+        try:
+            with lock_for(doc_id):
+                fn(lambda s, f, m="": _set(job, s, f, m))
+            _set(job, "완료", 1.0)
+        except Exception as e:  # 실패 사유를 화면에 그대로 보여 줍니다.
+            job["error"] = f"{type(e).__name__}: {e}"
+            job["trace"] = traceback.format_exc()
+        job["done"] = True
+    threading.Thread(target=run, daemon=True).start()
+    return job
+
+
 def _run(job, doc_id, force):
     try:
         with lock_for(doc_id):

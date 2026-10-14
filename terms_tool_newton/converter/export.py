@@ -141,6 +141,20 @@ def excel(doc_id, cids=None):
     for col in range(2, 12):
         ws.column_dimensions[get_column_letter(col)].width = 30
 
+    cls = pipeline.read_json(doc_id, "classification.json")
+    if cls:
+        order = {m: i for i, m in enumerate(["사망", "장해", "진단", "입원", "치료", "기타"])}
+        its = sorted((it for it in cls["items"].values() if it["cid"] in sel),
+                     key=lambda it: (order.get(it["major"], 9), it["mid"], it["minor"], it["cid"]))
+        sel_cls = set(cls.get("selected") or [])
+        _sheet(wb, "담보분류", ["대분류", "중분류", "소분류", "담보ID", "담보명", "표시 이름", "분류 출처", "분류 근거",
+                            "근거 조문", "근거 인용", "AI 제안(대/중/소)", "AI 근거 상태", "검토상태", "선택"],
+               [[it["major"], it["mid"], it["minor"], it["cid"], it["name"], it.get("display_name"), it["source"],
+                 it["reason"], (it.get("evidence") or {}).get("node"), (it.get("evidence") or {}).get("quote"),
+                 "/".join([it["ai"]["major"], it["ai"]["mid"], it["ai"]["minor"]]) if it.get("ai") else None,
+                 (it.get("ai") or {}).get("status"), it.get("review", "미검토"), "선택" if it["cid"] in sel_cls else ""]
+                for it in its], {"담보명": 50, "분류 근거": 60, "근거 인용": 60, "근거 조문": 40})
+
     _sheet(wb, "수정이력", ["시각", "작업자", "구분", "내용"],
            [[h["at"], h["user"], h["what"], json.dumps(h["data"], ensure_ascii=False)] for h in d["history"]],
            {"내용": 100})
@@ -168,6 +182,12 @@ def json_zip(doc_id, cids=None):
         c["review"] = d["reviews"].get(c["cid"], {"status": "미검토"})
     bio = io.BytesIO()
     with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as z:
+        cls = pipeline.read_json(doc_id, "classification.json")
+        if cls:
+            cls = dict(cls)
+            if sel:
+                cls["items"] = {k: v for k, v in cls["items"].items() if k in sel}
+            z.writestr("classification.json", json.dumps(cls, ensure_ascii=False, indent=1))
         for name, obj in (("coverage_map.json", cmap), ("terms.json", terms), ("tables.json", tables),
                           ("pages.json", pages), ("report.json", d["report"])):
             z.writestr(name, json.dumps(obj, ensure_ascii=False, indent=1))

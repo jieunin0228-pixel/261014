@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from converter import export, pipeline  # noqa: E402
+from converter import classify, export, pipeline  # noqa: E402
 from converter.structure import COVERAGE_TYPES  # noqa: E402
 
 app = FastAPI(title="약관 구조화 도구")
@@ -269,6 +269,63 @@ def review(doc_id: str, body: dict = Body(...)):
 def approval(doc_id: str, body: dict = Body(...)):
     check_doc(doc_id)
     return pipeline.set_approval(doc_id, bool(body.get("approved")), body.get("user", ""))
+
+
+# ---------------------------------------------------------------- 2단계: 담보 분류
+
+def _cls(fn):
+    try:
+        return fn()
+    except classify.NotApproved as e:
+        raise HTTPException(409, str(e))
+    except (KeyError, ValueError) as e:
+        raise HTTPException(400, str(e).strip("'"))
+
+
+@app.get("/api/docs/{doc_id}/classification")
+def cls_view(doc_id: str):
+    check_doc(doc_id)
+    return classify.view(doc_id)
+
+
+@app.post("/api/docs/{doc_id}/classification/generate")
+def cls_generate(doc_id: str, body: dict = Body(default={})):
+    check_doc(doc_id)
+    _cls(lambda: classify.generate(doc_id, body.get("user", ""), bool(body.get("reset"))))
+    return classify.view(doc_id)
+
+
+@app.post("/api/docs/{doc_id}/classification/ai")
+def cls_ai(doc_id: str, body: dict = Body(default={})):
+    check_doc(doc_id)
+    _cls(lambda: classify.require_approved(doc_id))
+    if not classify.ai_available():
+        raise HTTPException(400, "ANTHROPIC_API_KEY 환경변수가 설정되지 않아 AI 분류를 실행할 수 없습니다. README의 'AI 사용 설정'을 참고하세요.")
+    _cls(lambda: classify._get(doc_id))
+    cids = body.get("cids") or None
+    return pipeline.start_task(doc_id, lambda prog: classify.ai_suggest(doc_id, body.get("user", ""), prog, cids), "AI 분류 제안")
+
+
+@app.post("/api/docs/{doc_id}/classification/{op}")
+def cls_op(doc_id: str, op: str, body: dict = Body(...)):
+    check_doc(doc_id)
+    u = body.get("user", "")
+    if op == "move":
+        _cls(lambda: classify.move(doc_id, body["cid"], body["major"], body.get("mid", ""), body.get("minor", ""), u))
+    elif op == "rename_item":
+        _cls(lambda: classify.rename_item(doc_id, body["cid"], body.get("display_name", ""), u))
+    elif op == "rename_group":
+        _cls(lambda: classify.rename_group(doc_id, body["major"], body["mid"], body.get("minor"), body.get("new_name", ""), u))
+    elif op == "select":
+        _cls(lambda: classify.set_selected(doc_id, body.get("cids", []), u))
+    elif op == "review":
+        _cls(lambda: classify.set_review(doc_id, body["cid"], body["status"], u))
+    elif op == "apply_ai":
+        _, applied, skipped = _cls(lambda: classify.apply_ai(doc_id, body.get("cids", []), u))
+        return classify.view(doc_id) | {"applied": applied, "skipped": skipped}
+    else:
+        raise HTTPException(404, "알 수 없는 작업")
+    return classify.view(doc_id)
 
 
 # ---------------------------------------------------------------- 내보내기

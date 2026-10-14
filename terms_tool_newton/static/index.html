@@ -13,6 +13,7 @@
     <button data-tab="docs" class="on">문서</button>
     <button data-tab="report">품질 보고서</button>
     <button data-tab="verify">검증</button>
+    <button data-tab="classify">담보 분류 <span class="stage">2단계</span></button>
   </nav>
   <div class="who">
     <span id="docName" class="docname">문서를 선택하세요</span>
@@ -81,6 +82,29 @@
   </section>
 </main>
 
+  <!-- 담보 분류 (2단계) -->
+  <section id="tab-classify" class="tab">
+    <div id="clsBanner"></div>
+    <div class="card">
+      <div class="row">
+        <button id="clsGen" class="primary">자동 구성(규칙·기억)</button>
+        <button id="clsReset">처음부터 다시 구성</button>
+        <button id="clsAi">AI 분류 제안</button>
+        <button id="clsApplyAll">근거 확인된 AI 제안 모두 적용</button>
+        <span class="hint" id="clsSelInfo"></span>
+        <button id="clsX">엑셀(선택 담보)</button><button id="clsJ">JSON(선택 담보)</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="clsSearch" placeholder="담보 검색">
+        <label class="chk"><input type="checkbox" id="clsOnlyDiff"> AI 제안이 현재 분류와 다른 담보만</label>
+        <label class="chk"><input type="checkbox" id="clsOnlyTodo"> 미검토만</label>
+        <span class="hint">체크박스는 3단계 이후 분석할 담보 선택입니다. 상위 분류를 체크하면 하위 담보가 모두 선택됩니다.</span>
+      </div>
+      <div id="clsProg" class="progress hidden"><div class="bar"><div id="clsBar"></div></div><div id="clsProgText" class="hint"></div></div>
+    </div>
+    <div id="clsTree" class="card"><p class="hint">문서를 먼저 선택하세요.</p></div>
+  </section>
+
 <dialog id="dlg">
   <form method="dialog" id="dlgForm">
     <h3 id="dlgTitle"></h3>
@@ -90,5 +114,6 @@
 </dialog>
 <div id="toast" class="toast hidden"></div>
 <script src="app.js"></script>
+<script src="classify.js"></script>
 </body>
 </html>
