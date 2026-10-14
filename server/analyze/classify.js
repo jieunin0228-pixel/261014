@@ -159,11 +159,11 @@ function applyOverrides(coverages, review = {}) {
   const merged = coverages.map((c) => {
     const e = edits[c.id];
     if (!e) return { ...c, edited: false };
-    const v = { ...c, ...pick(e, ['name', 'category', 'group', 'excluded']), auto: { name: c.name, category: c.category, group: c.group, reason: c.reason }, edited: true };
+    const v = { ...c, ...pick(e, ['name', 'category', 'group', 'excluded', 'sectionId', 'sectionTitle']), auto: { name: c.name, category: c.category, group: c.group, reason: c.reason }, edited: true };
     if (v.category !== c.category || v.group !== c.group) v.reason = `사용자가 ${v.category} › ${v.group}(으)로 옮겼습니다. (자동 분류: ${c.category} — ${c.reason})`;
     return v;
   });
-  for (const a of review.added || []) merged.push({ ...a, ...pick(edits[a.id] || {}, ['name', 'category', 'group', 'excluded']), manual: true, edited: true });
+  for (const a of review.added || []) merged.push({ ...a, ...pick(edits[a.id] || {}, ['name', 'category', 'group', 'excluded', 'sectionId', 'sectionTitle']), manual: true, edited: true });
   return merged;
 }
 

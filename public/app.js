@@ -166,7 +166,7 @@
       ${open ? `<ul class="children">${g.items.map((c) => `<li class="leaf">
         <div class="node-row">
           <label>${checkbox(selected.has(c.id) ? 'all' : 'none', `data-ids="${esc(c.id)}"`)} ${esc(c.name)}</label>
-          ${c.edited ? '<span class="tag">수정됨</span>' : ''}${c.manual ? '<span class="tag">직접 추가</span>' : ''}
+          ${c.edited ? '<span class="tag">수정됨</span>' : ''}${c.manual ? '<span class="tag">직접 추가</span>' : ''}${c.fromToc ? '<span class="tag warn">목차 추정</span>' : ''}
           <button class="btn tiny" data-edit="${esc(c.id)}">편집</button>
         </div>
         <div class="reason">${esc(c.reason || '')}</div>
@@ -232,7 +232,9 @@
     form.category.value = c ? c.category : '기타';
     form.group.value = c ? c.group : '';
     form.excluded.checked = !!(c && c.excluded);
-    form.querySelector('.section-field').hidden = !!c;
+    // 새로 추가하는 담보와, 본문 약관이 정해지지 않은 담보(목차 추정 등)는 정의 약관을 고를 수 있습니다.
+    form.querySelector('.section-field').hidden = !!(c && c.sectionId && !c.fromToc);
+    if (c && c.sectionId) form.sectionId.value = c.sectionId;
     form.excluded.closest('label').hidden = !c;
     $('edit-reset').hidden = !(c && c.edited && !c.manual);
     $('edit-auto').textContent = c && c.auto ? `자동 분류 값: ${c.auto.category} › ${c.auto.group} › ${c.auto.name}` : '';
@@ -256,7 +258,12 @@
     const v = { name: form.name.value.trim(), category: form.category.value, group: form.group.value.trim() || '분류 미지정' };
     if (!v.name) return;
     if (editing) {
-      setEdit(editing.id, { ...v, excluded: form.excluded.checked });
+      const patch = { ...v, excluded: form.excluded.checked };
+      if (!form.querySelector('.section-field').hidden) {
+        const sec = doc.sections.find((x) => x.id === form.sectionId.value);
+        if (sec) Object.assign(patch, { sectionId: sec.id, sectionTitle: sec.title });
+      }
+      setEdit(editing.id, patch);
     } else {
       const s = doc.sections.find((x) => x.id === form.sectionId.value);
       const n = Math.max(0, ...review.added.map((a) => Number(a.id.slice(1)))) + 1;

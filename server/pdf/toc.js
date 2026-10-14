@@ -21,14 +21,20 @@ const FIRST_ARTICLE = { test: (t) => { const a = parseArticle(t); return !!a && 
 const CHAPTER_LINE = /^제\s*\d+\s*관\s*\S/;
 // 목차 줄: 제목 뒤에 점선(또는 넓은 공백)과 쪽번호
 const TOC_ENTRY = /^(.*?[^\s|])[\s|]*(?:[.·…ㆍ‧∙•_\-]{2,}|\s{2,}|\s(?=\d{1,4}$))[\s|]*(\d{1,4})$/;
-const TITLE_KEY = /(보통보험약관|보통약관|특별약관|특약|주계약)(\s*[(（][^)）]*[)）])*\s*(약관)?$/;
+// 약관 제목 끝: "…특약", "…특별약관", "…보통약관", "…주계약", 손해보험식 "…담보". 뒤에 (갱신형)·Ⅱ·2.0·[무배당] 같은 꼬리와 "약관"이 붙어도 됩니다.
+const TITLE_KEY = /(보통보험약관|보통약관|특별약관|특약|주계약|담보)(\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+(\.\d+)?\s*형?|[(（][^)）]*[)）]|\[[^\]]*\]))*\s*(약관)?$/;
+// 제목 앞뒤 장식 기호
+const DECOR = '◆◇■□●○▶▷►★☆※•▣◈◎♦❖=＝~∼\\-–—';
 const APPENDIX_LINE = /^[【\[<〈]?\s*별표\s*(\d+)(?:\s*[-의]\s*\d+)?\s*[】\]>〉]?\s*(.{0,50})$/;
 const BODY_ENDING = /(다\.|다\)|하며,|하고,|경우|에\s*따라|합니다|입니다)\s*$/;
 
-const norm = (s) => String(s).replace(/[\s·ㆍ.,()（）\[\]【】<>〈〉「」]/g, '');
+// 제목 비교용: 글자와 숫자만 남깁니다(띄어쓰기·괄호·장식 기호 차이 무시).
+const norm = (s) => String(s).replace(/[^\p{L}\p{N}]/gu, '');
 
+const DECOR_EDGE = new RegExp(`^[${DECOR}\\s]+|[${DECOR}\\s]+$`, 'g');
 function cleanTitle(line) {
-  return line.replace(/^(\d+(?:-\d+)*\.|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\.?|[가-하]\.)\s*/, '').replace(/^[【\[<〈《\s]+|[】\]>〉》\s]+$/g, '').trim();
+  return String(line).replace(DECOR_EDGE, '').replace(/^(\d+(?:-\d+)*[.)]|\(\d+\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\.?|[가-하]\.)\s*/, '')
+    .replace(/^[【\[<〈《\s]+|[】\]>〉》\s]+$/g, '').replace(DECOR_EDGE, '').trim();
 }
 
 // 약관 제목 줄이면 { title, kind }, 아니면 null
@@ -92,7 +98,8 @@ function nextArticleIndex(stream, from, limit = 14) {
 
 // 반환: [{ id, title, kind, appendixNo?, start, end, startPage, endPage, articles: [{ no, sub, title, line, page }] }]
 // start/end 는 stream 의 줄 위치(end 는 포함하지 않음)입니다.
-function splitSections(stream) {
+// forced: 목차에서 찾아낸 약관 시작 위치 [{ start, title, kind, appendixNo? }] — 제목 모양과 관계없이 경계로 씁니다.
+function splitSections(stream, forced = []) {
   const heads = [];
   let sawArticle = false;
   for (let i = 0; i < stream.length; i++) {
@@ -114,6 +121,13 @@ function splitSections(stream) {
     if (ARTICLE_LINE.test(t)) sawArticle = true;
   }
 
+  for (const f of forced) {
+    const near = heads.findIndex((h) => Math.abs(h.start - f.start) <= 2);
+    if (near >= 0) heads[near] = { ...heads[near], title: f.title, kind: f.kind, appendixNo: f.appendixNo, guessed: false, fromToc: true };
+    else heads.push({ ...f, fromToc: true });
+  }
+  heads.sort((a, b) => a.start - b.start);
+
   // 첫 제목보다 앞에 조문이 있으면 그 앞부분도 구간으로 남깁니다(제목을 못 읽은 첫 약관).
   const firstArticle = stream.findIndex((l) => ARTICLE_LINE.test(l.t));
   if (firstArticle >= 0 && (!heads.length || heads[0].start > firstArticle)) heads.unshift({ title: null, kind: '특별약관', start: 0, guessed: true });
@@ -126,9 +140,9 @@ function splitSections(stream) {
       const a = parseArticle(stream[i].t);
       if (a) articles.push({ ...a, line: i, page: stream[i].p });
     }
-    if (h.kind !== '별표' && !articles.length) return;
+    if (h.kind !== '별표' && !articles.length && !h.fromToc) return;
     sections.push({
-      title: h.title || `제목 미확인 구간(${stream[h.start].p}쪽)`, kind: h.kind, appendixNo: h.appendixNo, guessed: !!h.guessed,
+      title: h.title || `제목 미확인 구간(${stream[h.start].p}쪽)`, kind: h.kind, appendixNo: h.appendixNo, guessed: !!h.guessed, fromToc: !!h.fromToc,
       start: h.start, end, startPage: stream[h.start].p, endPage: stream[end - 1].p, articles,
     });
   });
@@ -144,25 +158,57 @@ function splitSections(stream) {
   return merged.map((s, i) => ({ id: `S${String(i + 1).padStart(3, '0')}`, ...s }));
 }
 
-// 목차의 약관·별표 항목과 본문 구간을 제목으로 짝짓습니다.
+// 목차의 약관·별표 항목과 본문 구간을 짝짓습니다. 제목이 같거나(장식·띄어쓰기 무시) 한쪽이 다른 쪽을 품으면 짝으로 보고,
+// 제목을 못 읽은 구간은 시작 쪽이 목차의 쪽과 맞으면 짝으로 보고 목차의 제목을 붙입니다.
 function matchToc(sections, toc, pages) {
   const printedToPdf = new Map();
   for (const p of pages) if (p.printed != null && !printedToPdf.has(p.printed)) printedToPdf.set(p.printed, p.n);
   const tops = toc.entries.filter((e) => e.level === '보통약관' || e.level === '특별약관' || /별표/.test(e.title));
   const used = new Set();
   for (const e of tops) {
+    delete e.sectionId;
     const key = norm(cleanTitle(e.title));
-    const s = sections.find((x) => !used.has(x.id) && norm(x.title) === key)
-      || sections.find((x) => !used.has(x.id) && key.length >= 4 && (norm(x.title).includes(key) || key.includes(norm(x.title))));
     e.pdfPage = printedToPdf.get(e.printed) ?? null;
+    const free = sections.filter((x) => !used.has(x.id));
+    const s = free.find((x) => norm(x.title) === key)
+      || free.find((x) => !x.guessed && key.length >= 4 && (norm(x.title).includes(key) || key.includes(norm(x.title))))
+      || (e.pdfPage != null ? free.find((x) => x.guessed && Math.abs(x.startPage - e.pdfPage) <= 1) : null);
     if (s) {
       used.add(s.id);
       e.sectionId = s.id;
+      if (s.guessed) { s.title = cleanTitle(e.title); s.guessed = false; s.titledByToc = true; }
       s.toc = { title: e.title, printed: e.printed, pdfPage: e.pdfPage, pageAgrees: e.pdfPage == null ? null : Math.abs(e.pdfPage - s.startPage) <= 1 };
     }
   }
-  const missing = tops.filter((e) => !e.sectionId).map((e) => ({ title: e.title, printed: e.printed, pdfPage: e.pdfPage }));
+  const missing = tops.filter((e) => !e.sectionId).map((e) => ({ title: e.title, printed: e.printed, pdfPage: e.pdfPage, tocPage: e.tocPage }));
   return { entries: tops, missing };
 }
 
-module.exports = { findToc, bodyStream, splitSections, matchToc, sectionTitle, cleanTitle, parseArticle, ARTICLE_LINE, TOC_ENTRY, norm };
+// 목차에는 있으나 본문 구간과 짝이 없는 약관의 시작 줄을 본문에서 찾습니다.
+// 제목 글자가 들어 있는 짧은 줄 가운데, 목차의 쪽(알면)에 가장 가까운 줄을 고릅니다. 반환: splitSections 의 forced
+function locateTocEntries(missing, stream) {
+  const forced = [];
+  for (const e of missing) {
+    const title = cleanTitle(e.title);
+    const key = norm(title);
+    if (key.length < 3) continue;
+    let best = null;
+    for (let i = 0; i < stream.length; i++) {
+      const t = stream[i].t;
+      if (t.length > title.length + 30 || ARTICLE_LINE.test(t)) continue;
+      const k = norm(cleanTitle(t));
+      if (!(k === key || (k.includes(key) && k.length <= key.length + 12))) continue;
+      const dist = e.pdfPage != null ? Math.abs(stream[i].p - e.pdfPage) : 0;
+      if (e.pdfPage != null && dist > 3) continue;
+      if (!best || dist < best.dist) best = { i, dist };
+      if (dist === 0) break;
+    }
+    if (!best) continue;
+    const head = sectionTitle(title);
+    const app = title.match(/별표\s*(\d+)/);
+    forced.push({ start: best.i, title: head && head.kind === '별표' ? head.title : title, kind: app ? '별표' : (head ? head.kind : (/보통|주계약/.test(title) ? '보통약관' : '특별약관')), appendixNo: app ? Number(app[1]) : undefined });
+  }
+  return forced;
+}
+
+module.exports = { findToc, bodyStream, splitSections, matchToc, locateTocEntries, sectionTitle, cleanTitle, parseArticle, ARTICLE_LINE, TOC_ENTRY, norm };

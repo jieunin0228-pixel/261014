@@ -255,3 +255,27 @@ test('서버: 읽기 규칙이 바뀐 문서는 열 때 다시 분석하고, 직
     server.close();
   }
 });
+
+test('목차 활용: 본문 제목을 못 읽은 특약은 목차로 이름을 붙이고, 목차에만 있는 특약은 "목차 추정" 후보로 올린다', async () => {
+  const { analyzeStructure } = require('../server/analyze/pipeline');
+  const { pages: p4 } = await extractPdf(fs.readFileSync(path.join(__dirname, 'fixtures', 'toc-variant-policy.pdf')));
+  const { structure, coverages: covs, meta } = analyzeStructure(p4);
+  assert.deepEqual(structure.sections.map((s) => s.title), ['무배당 목차건강보험 보통약관', '무배당 암진단특약', '무배당 뇌출혈진단특약', '무배당 골절치료특약', '수술 보장 안내']);
+  assert.ok(!structure.sections.some((s) => s.guessed), '제목 미확인 구간이 남으면 안 됩니다');
+  assert.deepEqual(covs.filter((c) => !c.fromToc).map((c) => `${c.group}/${c.name}`), [
+    '무배당 목차건강보험 보통약관/사망보험금', '무배당 암진단특약/암진단보험금', '무배당 뇌출혈진단특약/뇌출혈진단보험금',
+    '무배당 골절치료특약/골절치료보험금', '수술 보장 안내/수술보험금',
+  ]);
+  const tocOnly = covs.filter((c) => c.fromToc);
+  assert.deepEqual(tocOnly.map((c) => c.name), ['무배당 수술특약', '무배당 화상진단특약']);
+  assert.equal(tocOnly[0].sectionId, null);
+  assert.match(tocOnly[1].reason, /목차에만 있고/);
+  assert.ok(meta.warnings.some((w) => w.type === 'toc-only'));
+});
+
+test('장식 기호·번호·꼬리표가 붙은 약관 제목을 읽는다', () => {
+  assert.equal(sectionTitle('◆ 무배당 뇌출혈진단특약 ◆').title, '무배당 뇌출혈진단특약');
+  assert.equal(sectionTitle('(3) 무배당 암진단특약Ⅱ').title, '무배당 암진단특약Ⅱ');
+  assert.equal(sectionTitle('상해사망 담보').kind, '특별약관');
+  assert.equal(sectionTitle('■ 무배당 질병입원특약(갱신형) 약관 ■').title, '무배당 질병입원특약(갱신형) 약관');
+});

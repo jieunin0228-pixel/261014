@@ -68,6 +68,7 @@ main { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr)
 .leaf .reason, .leaf .where { font-size: 12px; margin-left: 22px; }
 .leaf .where { font-variant-numeric: tabular-nums; }
 .none { margin: 4px 0 4px 24px; font-size: 12px; }
+.tag.warn { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn-line); }
 .tag { font-size: 11px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .excluded { margin-top: 12px; font-size: 13px; }
 .excluded ul { padding-left: 18px; }

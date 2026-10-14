@@ -121,7 +121,10 @@ function sanitizeEdits(edits) {
   const out = {};
   for (const [key, e] of Object.entries(edits).slice(0, 5000)) {
     if (!e || typeof e !== 'object') continue;
-    const v = { name: str(e.name), category: CATEGORIES.includes(e.category) ? e.category : undefined, group: str(e.group), excluded: typeof e.excluded === 'boolean' ? e.excluded : undefined };
+    const v = {
+      name: str(e.name), category: CATEGORIES.includes(e.category) ? e.category : undefined, group: str(e.group), excluded: typeof e.excluded === 'boolean' ? e.excluded : undefined,
+      sectionId: /^S\d{3}$/.test(e.sectionId) ? e.sectionId : undefined, sectionTitle: str(e.sectionTitle),
+    };
     out[str(key, 80)] = Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined));
   }
   return out;
