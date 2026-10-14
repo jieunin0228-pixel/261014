@@ -22,6 +22,7 @@
     { key: 'formula', label: '상세계산식' },
     { key: 'statusCode', label: '계약상태처리코드' },
     { key: 'status', label: '계약상태처리' },
+    { key: 'section', label: '약관구간' },
     { key: 'citations', label: '약관근거조항' },
     { key: 'excerptText', label: '원문발췌' },
     { key: 'flagText', label: '주의·테스트표시' },

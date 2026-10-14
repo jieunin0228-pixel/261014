@@ -5,10 +5,12 @@
   "description": "생명보험 약관을 ECS 룰 테이블 행으로 변환하는 웹앱 (더미 데이터 전용)",
   "scripts": {
     "build:samples": "node scripts/build-samples.js",
+    "build:vendor": "node scripts/build-cmaps.js && cp node_modules/xlsx/dist/xlsx.full.min.js node_modules/pdfjs-dist/build/pdf.min.js node_modules/pdfjs-dist/build/pdf.worker.min.js vendor/",
+    "build:artifact": "node scripts/build-artifact.js",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
-    "pdfjs-dist": "^3.11.174",
+    "pdfjs-dist": "3.11.174",
     "xlsx": "0.18.5"
   }
 }

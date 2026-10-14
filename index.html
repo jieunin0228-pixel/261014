@@ -47,7 +47,20 @@
   button.warn { border-color: var(--accent); background: var(--accent); color: var(--on-brand); }
   button:disabled { opacity: .45; cursor: default; }
   .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  textarea { flex: 1; border: 0; padding: 10px; resize: none; font: 12px/1.6 var(--font-mono); background: var(--panel); color: var(--text); min-height: 200px; }
+  .controls { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .lbl { font-weight: 600; min-width: 42px; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--muted); font-size: 12px; }
+  input[type="text"], select { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+  input[type="text"] { flex: 1; min-width: 120px; }
+  .sections { max-height: 160px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); }
+  .sec { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .sec:last-child { border-bottom: 0; }
+  .sec .kind { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--head); color: var(--muted); white-space: nowrap; }
+  .sec .t { flex: 1; min-width: 0; }
+  .sec small { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  textarea { flex: 1; border: 0; padding: 10px; resize: none; font: 12px/1.6 var(--font-mono); background: var(--panel); color: var(--text); min-height: 160px; }
   .status { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
   .summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; background: var(--panel-2); }
@@ -88,18 +101,40 @@
 <body>
 <header>
   <h1>ECS 룰 변환기</h1>
-  <span class="note">약관 → 보험금 심사 룰 테이블 · 더미 데이터 전용 · 모든 처리는 브라우저 안에서만 이루어집니다</span>
+  <span class="note">약관 PDF → 보험금 심사 룰 테이블 · AI 분석 결과는 원문 인용과 코드표로 검증하며, 최종 반영 전 심사자 확인이 필요합니다</span>
 </header>
 <main>
   <section>
     <div class="bar">
       <h2>약관 입력</h2>
+      <label class="filebtn">PDF·텍스트 열기<input id="fileTerms" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain"></label>
       <button id="btnSample">샘플 약관</button>
-      <label class="filebtn">파일 열기(.txt)<input id="fileTerms" type="file" accept=".txt,.md,text/plain"></label>
-      <button id="btnRun" class="primary">변환</button>
     </div>
-    <textarea id="terms" spellcheck="false" placeholder="약관 텍스트를 붙여넣거나 .txt 파일을 여세요.&#10;조문은 '제N조(제목)', 항은 ①②, 호는 '1.', 목은 '가.' 형식이어야 합니다."></textarea>
-    <div class="status" id="status">대기 중입니다.</div>
+    <div class="controls">
+      <div class="row">
+        <label for="coverage" class="lbl">담보</label>
+        <input id="coverage" type="text" value="전체" placeholder="전체 또는 수술비, 암진단">
+        <button id="btnFind">대상 찾기</button>
+      </div>
+      <div class="row">
+        <span class="lbl">코드표</span>
+        <span id="masterInfo" class="muted grow"></span>
+        <label class="filebtn">올리기<input id="fileMaster" type="file" accept=".xlsx,.xls"></label>
+        <button id="btnTemplate">양식</button>
+      </div>
+      <div class="sections" id="sections" aria-label="분석 대상 구간"></div>
+      <div class="row">
+        <select id="tier" aria-label="분석 방식">
+          <option value="complex">정확도 우선</option>
+          <option value="default">속도 우선</option>
+        </select>
+        <button id="btnAi" class="primary">AI 분석</button>
+        <button id="btnStop" hidden>중지</button>
+        <button id="btnRun" title="보통약관 사망 급부만 규칙으로 변환합니다(더미 약관 문형 전용)">규칙 엔진(사망)</button>
+      </div>
+    </div>
+    <textarea id="terms" spellcheck="false" aria-label="약관 원문" placeholder="PDF·텍스트 파일을 열거나 약관을 붙여넣으세요.&#10;조문은 '제N조(제목)', 항은 ①②, 호는 '1.', 목은 '가.' 형식이어야 하며, 특약 제목 줄('○○ 특별약관')로 구간을 나눕니다."></textarea>
+    <div class="status" id="status" role="status">대기 중입니다.</div>
   </section>
 
   <section>
@@ -133,9 +168,15 @@
   </section>
 </main>
 <script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/cmaps-ko.js"></script>
+<script src="vendor/pdf.worker.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
 <script src="src/schema.js"></script>
 <script src="src/engine.js"></script>
+<script src="src/ai.js"></script>
+<script src="src/pdf-text.js"></script>
 <script src="samples/dummy-terms.js"></script>
+<script src="samples/dummy-riders.js"></script>
 <script src="src/app.js"></script>
 </body>
 </html>

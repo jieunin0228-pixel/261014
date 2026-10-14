@@ -278,6 +278,7 @@
         calcTarget: [...new Set([...r.formula.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]))].join(', '),
         statusCode: status ? S.STATUS.소멸 : '',
         status: status ? '소멸' : '확인필요',
+        section: '',
         evidence: dedupe(evidence),
         flags,
       });
