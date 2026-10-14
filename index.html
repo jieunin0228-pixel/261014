@@ -4,64 +4,85 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECS 룰 변환기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
+  /* 레이아웃: 좌측 약관 원문, 우측 룰 테이블(심사 시스템 화면처럼 밀도 높은 표) */
   :root {
-    --bg: #f3f5f4; --panel: #ffffff; --line: #d5dbd8; --text: #1f2a24; --muted: #66736c;
-    --brand: #2f5d46; --brand-2: #3f7a5c; --accent: #d9822b;
-    --ok: #e3f4e7; --ok-b: #2e8b57; --cut: #fff4cc; --cut-b: #b8860b;
-    --ex: #fde3e3; --ex-b: #c0392b; --end: #e2ecfb; --end-b: #2f6fc6;
-    --sel: #cfe3ff;
+    --bg: #eef2f0; --panel: #ffffff; --panel-2: #e6ece9; --head: #dbe4df; --line: #cfd8d3;
+    --text: #1d2823; --muted: #5f6d66; --brand: #2c5a44; --brand-2: #3d7659; --on-brand: #ffffff;
+    --accent: #c9711f; --sel: #cfe0f7;
+    --ok: #e2f3e6; --ok-b: #2b8051; --cut: #fdf2c6; --cut-b: #9a6f08;
+    --ex: #fbe1df; --ex-b: #b73a2e; --end-b: #2e66b8; --none-b: #7b847f;
+    --font-body: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #141a17; --panel: #1b2320; --panel-2: #222c28; --head: #26322d; --line: #34413b;
+    --text: #e3ebe6; --muted: #9aa8a1; --brand: #8fc9a8; --brand-2: #3f7d5e; --on-brand: #ffffff;
+    --accent: #d98634; --sel: #23395a;
+    --ok: #1d3326; --ok-b: #3f9e68; --cut: #3a3217; --cut-b: #b8901f;
+    --ex: #3e2220; --ex-b: #d0584b; --end-b: #4a83d6; --none-b: #6f7a75; color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #141a17; --panel: #1b2320; --panel-2: #222c28; --head: #26322d; --line: #34413b;
+    --text: #e3ebe6; --muted: #9aa8a1; --brand: #8fc9a8; --brand-2: #3f7d5e; --on-brand: #ffffff;
+    --accent: #d98634; --sel: #23395a;
+    --ok: #1d3326; --ok-b: #3f9e68; --cut: #3a3217; --cut-b: #b8901f;
+    --ex: #3e2220; --ex-b: #d0584b; --end-b: #4a83d6; --none-b: #6f7a75; color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; color: var(--text); background: var(--bg); }
-  header { background: var(--brand); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
-  header .note { font-size: 12px; opacity: .8; }
-  main { display: grid; grid-template-columns: minmax(300px, 30%) minmax(0, 1fr); gap: 12px; padding: 12px; height: calc(100vh - 46px); }
+  html, body { height: 100%; }
+  body { margin: 0; display: flex; flex-direction: column; font: 13px/1.5 var(--font-body); color: var(--text); background: var(--bg); }
+  header { background: var(--brand-2); color: var(--on-brand); padding: 10px 16px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
+  header .note { font-size: 12px; opacity: .85; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 30%) minmax(0, 1fr); gap: 12px; padding-block: 12px; padding-inline: 16px; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: #e9eeeb; border-radius: 6px 6px 0 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); border-radius: 6px 6px 0 0; }
   .bar h2 { font-size: 13px; margin: 0 auto 0 0; }
-  button, .filebtn { font: inherit; border: 1px solid var(--brand-2); background: #fff; color: var(--brand); padding: 4px 10px; border-radius: 4px; cursor: pointer; }
-  button.primary { background: var(--brand-2); color: #fff; }
-  button.warn { border-color: var(--accent); background: var(--accent); color: #fff; }
+  button, .filebtn { font: inherit; border: 1px solid var(--brand-2); background: var(--panel); color: var(--brand); padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  button:focus-visible, .filebtn:focus-within, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--brand-2); color: var(--on-brand); }
+  button.warn { border-color: var(--accent); background: var(--accent); color: var(--on-brand); }
   button:disabled { opacity: .45; cursor: default; }
-  .filebtn input { display: none; }
-  textarea { flex: 1; border: 0; padding: 10px; resize: none; font: 12px/1.6 ui-monospace, Consolas, monospace; outline: none; min-height: 200px; }
+  .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  textarea { flex: 1; border: 0; padding: 10px; resize: none; font: 12px/1.6 var(--font-mono); background: var(--panel); color: var(--text); min-height: 200px; }
   .status { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-  .summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; background: #fafbfa; }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; background: var(--panel-2); }
   .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
   .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 4px; border: 1px solid; }
-  .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); }
   .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 10px; }
   .tab.on { color: var(--brand); border-bottom-color: var(--brand); font-weight: 700; }
   .views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .view { flex: 1; min-height: 0; overflow: auto; display: none; }
   .view.on { display: block; }
-  table { border-collapse: collapse; width: max-content; min-width: 100%; }
+  table { border-collapse: collapse; width: max-content; min-width: 100%; font-variant-numeric: tabular-nums; }
   th, td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; white-space: nowrap; }
-  th { position: sticky; top: 0; background: #dfe7e2; z-index: 1; font-weight: 600; }
+  th { position: sticky; top: 0; background: var(--head); z-index: 1; font-weight: 600; }
   td.wrap { white-space: pre-line; min-width: 220px; max-width: 360px; }
-  td.mono { font-family: ui-monospace, Consolas, monospace; }
+  td.mono { font-family: var(--font-mono); }
   tr.cat-정상 td { background: var(--ok); }
   tr.cat-감액 td { background: var(--cut); }
   tr.cat-면책 td { background: var(--ex); }
   tr.rule { cursor: pointer; }
   tr.rule:hover td { filter: brightness(.97); }
   tr.rule.sel td { background: var(--sel); }
-  .badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-weight: 700; color: #fff; }
+  .badge { display: inline-block; padding: 0 7px; border-radius: 10px; font-weight: 700; color: var(--on-brand); }
   .b-정상 { background: var(--ok-b); } .b-감액 { background: var(--cut-b); } .b-면책 { background: var(--ex-b); } .b-소멸 { background: var(--end-b); }
-  .b-확인필요 { background: #888; }
-  .detail { border-top: 2px solid var(--brand); max-height: 38%; overflow: auto; padding: 8px 12px; background: #fbfcfb; }
+  .b-확인필요 { background: var(--none-b); }
+  .detail { border-top: 2px solid var(--brand); max-height: 38%; overflow: auto; padding: 8px 12px; background: var(--panel-2); }
   .detail h3 { margin: 0 0 6px; font-size: 13px; }
-  .detail blockquote { margin: 4px 0 8px; padding: 6px 10px; background: #fff; border-left: 3px solid var(--brand-2); white-space: pre-wrap; }
+  .detail blockquote { margin: 4px 0 8px; padding: 6px 10px; background: var(--panel); border-left: 3px solid var(--brand-2); white-space: pre-wrap; }
   .detail .ref { font-weight: 700; color: var(--brand); }
   .detail ul { margin: 4px 0; padding-left: 18px; }
   .empty { color: var(--muted); padding: 16px; }
   .cmp-일치 td { background: var(--ok); } .cmp-불일치 td { background: var(--ex); }
   .cmp-정답지에만 td, .cmp-생성에만 td { background: var(--cut); }
   .diff { color: var(--ex-b); font-weight: 700; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } section { min-height: 60vh; } }
+  @media (max-width: 900px) { html, body { height: auto; } main { grid-template-columns: 1fr; } section { min-height: 60vh; } }
 </style>
 </head>
 <body>
@@ -84,6 +105,7 @@
   <section>
     <div class="bar">
       <h2>ECS 룰 테이블</h2>
+      <button id="btnSampleKey">샘플 정답지로 비교</button>
       <label class="filebtn" id="lblCompare">정답지와 비교<input id="fileAnswer" type="file" accept=".xlsx,.xls"></label>
       <button id="btnExcel" class="warn" disabled>엑셀 다운로드</button>
     </div>

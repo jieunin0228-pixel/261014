@@ -6,6 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const state = { result: null, compare: null, selected: null };
+  const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
 
   function setStatus(msg) { $('status').textContent = msg; }
 
@@ -99,7 +100,7 @@
     $('view-missing').innerHTML = listTable(state.result.missing, MISSING_COLS, '근거 없음 항목이 없습니다. 모든 행에 약관 조항이 연결되었습니다.');
   }
 
-  function downloadExcel() {
+  async function downloadExcel() {
     const { rows, manual, missing } = state.result;
     const book = XLSX.utils.book_new();
     const aoa = [S.RULE_COLUMNS.map((c) => c.label), ...rows.map((r) => S.RULE_COLUMNS.map((c) => r[c.key]))];
@@ -110,7 +111,17 @@
     XLSX.utils.book_append_sheet(book, sheetOf(manual, MANUAL_COLS), '심사자수기');
     XLSX.utils.book_append_sheet(book, sheetOf(missing, MISSING_COLS), '근거없음');
     if (state.compare) XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(compareAoa()), '정답지비교');
-    XLSX.writeFile(book, `ECS_룰테이블_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const filename = `ECS_룰테이블_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    if (!inArtifact) { XLSX.writeFile(book, filename); return; }
+    // claude.ai 아티팩트 안에서는 페이지가 직접 내려받을 수 없어 downloads 기능으로 저장을 요청합니다.
+    const downloads = await window.claude.use('downloads');
+    if (!downloads) { setStatus('이 화면에서는 파일 저장을 쓸 수 없습니다.'); return; }
+    try {
+      await downloads.save({ filename, data: XLSX.write(book, { type: 'array', bookType: 'xlsx' }) });
+      setStatus(`${filename} 을(를) 저장했습니다.`);
+    } catch (err) {
+      setStatus(err && err.code === 'declined' ? '저장을 취소했습니다.' : `저장하지 못했습니다(${err && err.code || '알 수 없는 오류'}).`);
+    }
   }
 
   const CMP_COLS = ['결과', '차이 항목', '정답지 행', '생성 행번호', '구보장급부명', '사고유형', '사인그룹코드', '계산식결정조건', '상세계산식(정답지)', '상세계산식(생성)', '계약상태처리(정답지)', '계약상태처리(생성)', '주의·테스트표시(생성)'];
@@ -141,16 +152,35 @@
 
   async function compareFile(file) {
     if (!state.result) { setStatus('먼저 약관을 변환한 뒤 정답지를 올리세요.'); return; }
-    const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-    const records = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: '' });
+    await compareBuffer(file.name, await file.arrayBuffer());
+  }
+
+  // 함께 게시된 samples/answer_key.json(answer_key.xlsx 와 같은 내용)으로 비교합니다. file:// 로 연 경우에는 브라우저가 읽기를 막습니다.
+  async function compareSample() {
+    if (!state.result) { setStatus('먼저 약관을 변환하세요.'); return; }
+    try {
+      const res = await fetch('samples/answer_key.json');
+      if (!res.ok) throw new Error(res.status);
+      applyCompare('샘플 정답지', await res.json());
+    } catch (e) {
+      setStatus('샘플 정답지를 읽지 못했습니다. [정답지와 비교]로 samples/answer_key.xlsx 파일을 직접 올리세요.');
+    }
+  }
+
+  async function compareBuffer(name, buf) {
+    const book = XLSX.read(buf, { type: 'array' });
+    applyCompare(name, XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: '' }));
+  }
+
+  function applyCompare(name, records) {
     const cmp = E.compareWithAnswerKey(state.result.rows, records);
-    if (cmp.error) { setStatus(`${file.name}: ${cmp.error}`); return; }
+    if (cmp.error) { setStatus(`${name}: ${cmp.error}`); return; }
     state.compare = cmp;
     renderRules();
     renderCompare();
     renderSummary();
     const s = cmp.summary;
-    setStatus(`${file.name} 비교 결과: 일치 ${s.일치}, 불일치 ${s.불일치}, 정답지에만 ${s.정답지에만}, 생성에만 ${s.생성에만}입니다.`);
+    setStatus(`${name} 비교 결과: 일치 ${s.일치}, 불일치 ${s.불일치}, 정답지에만 ${s.정답지에만}, 생성에만 ${s.생성에만}입니다.`);
     showTab('compare');
   }
 
@@ -158,7 +188,7 @@
   async function readTextFile(file) {
     const buf = await file.arrayBuffer();
     const utf8 = new TextDecoder('utf-8').decode(buf);
-    if (!utf8.includes('�')) return utf8;
+    if (!utf8.includes('\uFFFD')) return utf8;
     try { return new TextDecoder('euc-kr').decode(buf); } catch (e) { return utf8; }
   }
 
@@ -172,6 +202,7 @@
     e.target.value = '';
   });
   $('btnExcel').addEventListener('click', downloadExcel);
+  $('btnSampleKey').addEventListener('click', compareSample);
   $('fileAnswer').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (f) await compareFile(f);
@@ -185,6 +216,11 @@
     for (const x of document.querySelectorAll('tr.rule')) x.classList.toggle('sel', x === tr);
     renderDetail();
   });
+
+  // 첫 화면부터 동작 예시가 보이도록 샘플 약관을 변환해 둡니다.
+  $('terms').value = window.DUMMY_TERMS;
+  run();
+  setStatus('샘플(더미) 약관을 변환한 결과입니다. 약관을 바꿔 넣고 [변환]을 누르세요.');
 
   window.EcsApp = { state, run };
 })();

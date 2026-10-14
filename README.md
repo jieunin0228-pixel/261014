@@ -11,11 +11,15 @@
 3. [정답지와 비교]로 정답지 엑셀(`samples/answer_key.xlsx` 형식)을 올리면 일치·불일치 결과가 표시됩니다.
 4. [엑셀 다운로드]를 누르면 룰테이블·심사자수기·근거없음 시트를 받을 수 있고, 비교를 실행한 뒤라면 정답지비교 시트도 함께 받습니다.
 
+## claude.ai 아티팩트로 게시
+
+`node scripts/build-artifact.js`를 실행하면 `build/artifact.html`이 만들어지며, 이 파일을 아티팩트로 게시합니다. 함께 올리는 파일은 `src/schema.js`, `src/engine.js`, `src/app.js`, `samples/dummy-terms.js`, `samples/answer_key.json`입니다. 아티팩트 안에서는 페이지가 파일을 직접 내려받을 수 없으므로, 엑셀 다운로드는 `downloads` 기능을 통해 보는 사람의 확인을 받은 뒤 저장합니다. 아티팩트에는 .xlsx 파일을 첨부할 수 없어서, [샘플 정답지로 비교] 버튼은 같은 내용의 `answer_key.json`을 읽습니다.
+
 ## 개발·검증
 
 ```bash
 npm install
-npm run build:samples   # samples/dummy_terms.txt, samples/answer_key.xlsx 재생성
+npm run build:samples   # samples/dummy_terms.txt, answer_key.xlsx, answer_key.json 재생성
 npm test                # 단계별 단위 테스트(16건)
 NODE_PATH=$(npm root -g) node scripts/ui-check.js /tmp   # Playwright 화면 점검(선택)
 ```
