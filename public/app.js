@@ -91,6 +91,7 @@
       <span>인쇄 쪽번호 인식 ${m.printedPagesFound}쪽</span>${m.twoColumnPages ? `<span>2단 편집 ${m.twoColumnPages}쪽</span>` : ''}`;
     $('page-peek').hidden = false;
     $('peek-page').max = m.numPages;
+    renderToc();
     $('warnings').innerHTML = (m.warnings || []).map((w) => {
       let detail = '';
       if (w.pages) detail = `<div class="muted">해당 PDF 쪽: ${w.pages.slice(0, 40).join(', ')}${w.pages.length > 40 ? ' …' : ''}</div>`;
@@ -98,6 +99,40 @@
       return `<div class="warning ${w.type === 'ocr' ? 'strong' : ''}"><strong>${w.type === 'ocr' ? 'OCR 필요' : '확인 필요'}</strong> ${esc(w.message)}${detail}</div>`;
     }).join('');
   }
+
+  // ───────────── 목차 인식 결과·목차 쪽 지정 ─────────────
+  const LEVEL_TEXT = { 보통약관: '약관', 특별약관: '약관(특약)', 담보: '담보 이름', 조: '조문', 관: '관', 기타: '기타' };
+  function renderToc() {
+    const m = doc.meta;
+    const all = doc.tocAll || [];
+    const tops = all.filter((e) => e.level !== '조' && e.level !== '관');
+    $('toc-box').hidden = false;
+    $('toc-count').textContent = all.length ? `(목차 항목 ${all.length}개 · 약관·담보 ${tops.length}개)` : '(목차를 찾지 못함)';
+    const pagesText = (m.tocPages || []).length ? `${m.tocPages[0]}~${m.tocPages[m.tocPages.length - 1]}쪽` : '';
+    $('toc-state').textContent = m.tocForced
+      ? `직접 지정한 목차 쪽(${pagesText})을 읽었습니다.`
+      : pagesText ? `앱이 자동으로 찾은 목차 쪽은 ${pagesText}입니다. 실제 목차 쪽과 다르면 아래에 직접 넣어 주십시오.` : '목차 쪽을 자동으로 찾지 못했습니다. 목차가 있는 쪽을 아래에 직접 넣어 주십시오.';
+    if (m.tocRange) { $('toc-from').value = m.tocRange.from; $('toc-to').value = m.tocRange.to; }
+    $('toc-clear').hidden = !m.tocForced;
+    const secTitle = (id) => (doc.sections.find((x) => x.id === id) || {}).title;
+    $('toc-table').innerHTML = tops.length
+      ? `<thead><tr><th>목차 항목</th><th>목차 쪽번호</th><th>구분</th><th>본문 연결</th></tr></thead><tbody>${tops.map((e) => `<tr>
+          <td>${esc(e.title)}</td><td>${e.printed ?? '-'}</td><td>${esc(LEVEL_TEXT[e.level] || e.level)}</td>
+          <td>${e.sectionId ? `연결됨: ${esc(secTitle(e.sectionId))}` : e.coverageFound ? '본문 담보와 같은 이름' : e.level === '담보' || e.level === '특별약관' || e.level === '보통약관' ? '<span class="tag warn">목차 추정 후보</span>' : '-'}</td>
+        </tr>`).join('')}</tbody>`
+      : '<tbody><tr><td class="muted">읽은 약관·담보 항목이 없습니다.</td></tr></tbody>';
+  }
+  async function applyToc(range) {
+    try {
+      showProgress(0.5, '목차를 다시 읽고 담보를 다시 찾는 중입니다.');
+      await api.setToc(doc.meta.id, range, showProgress);
+      await openDoc(doc.meta.id);
+      showProgress(1, `다시 분석했습니다. 자동 추출 담보 ${doc.meta.coverageCount}개`);
+      $('toc-box').open = true;
+    } catch (err) { showProgress(0, err.message); }
+  }
+  $('toc-apply').addEventListener('click', () => applyToc({ from: Number($('toc-from').value), to: Number($('toc-to').value || $('toc-from').value) }));
+  $('toc-clear').addEventListener('click', () => applyToc({ clear: true }));
 
   // ───────────── PDF 글자 확인 ─────────────
   async function peek() {

@@ -60,6 +60,14 @@
     return body;
   }
 
+  // 목차 쪽 지정 후 다시 분석: range = { from, to } 또는 { clear: true }
+  async function setToc(id, range, onProgress = () => {}) {
+    const res = await fetch(`/api/docs/${id}/toc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(range) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || '목차 쪽을 지정하지 못했습니다.');
+    await followStructure(id, onProgress);
+  }
+
   async function save(id, review) {
     const res = await fetch(`/api/docs/${id}/review`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(review) });
     return res.ok;
@@ -89,7 +97,7 @@
   const resetMaster = async () => json(await fetch('/api/codemaster', { method: 'DELETE' }));
 
   window.CoverageApi = {
-    analyze, list, open, save, pageText,
+    analyze, list, open, save, pageText, setToc,
     supportsAnalysis: true, config, results, runAnalysis, stopAnalysis, watchAnalysis, uploadMaster, resetMaster, masterDownloadUrl: '/api/codemaster/download',
     sampleUrl: 'samples/sample_policy.pdf',
     storageNote: '올린 PDF와 분석 결과는 이 PC의 data 폴더에만 저장됩니다. 같은 PDF를 다시 올리면 저장된 결과를 바로 엽니다.',

@@ -279,3 +279,49 @@ test('장식 기호·번호·꼬리표가 붙은 약관 제목을 읽는다', ()
   assert.equal(sectionTitle('상해사망 담보').kind, '특별약관');
   assert.equal(sectionTitle('■ 무배당 질병입원특약(갱신형) 약관 ■').title, '무배당 질병입원특약(갱신형) 약관');
 });
+
+test('목차 쪽 직접 지정: 쪽번호 없는 목차도 읽고, 목차에 나열된 담보 이름을 그 특약의 담보 후보로 올린다', async () => {
+  const { analyzeStructure } = require('../server/analyze/pipeline');
+  const { pages: p5 } = await extractPdf(fs.readFileSync(path.join(__dirname, 'fixtures', 'toc-listed-policy.pdf')));
+  const auto = analyzeStructure(p5);
+  assert.deepEqual(auto.structure.tocPages, []);
+  assert.ok(auto.meta.warnings.some((w) => w.type === 'toc' && /직접 지정/.test(w.message)));
+  const forced = analyzeStructure(p5, () => {}, { tocPages: [7, 8] });
+  assert.equal(forced.meta.tocForced, true);
+  const cand = forced.coverages.filter((c) => c.fromToc);
+  assert.deepEqual(cand.map((c) => `${c.group}/${c.name}/${c.category}`), [
+    '무배당 암보장특약/암진단비(유사암 제외)/진단', '무배당 암보장특약/유사암진단비/진단', '무배당 뇌질환보장특약/뇌졸중진단비/진단',
+  ]);
+  assert.ok(cand.every((c) => c.sectionId), '목차에서 바로 앞 특약이 본문과 연결돼 있으면 정의 약관이 정해져야 합니다');
+  // 본문에 이미 있는 담보(뇌출혈진단비·골절수술비)는 중복으로 올리지 않습니다.
+  assert.equal(forced.coverages.filter((c) => c.name === '뇌출혈진단비').length, 1);
+  assert.ok(forced.structure.tocAll.find((e) => e.title === '뇌출혈진단비').coverageFound);
+});
+
+test('서버: 목차 쪽 지정 → 저장된 추출 결과로 다시 분석 → 자동 찾기로 되돌리기', async () => {
+  const app = require('../server/index');
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const up = await (await fetch(`${base}/api/upload`, { method: 'POST', body: fs.readFileSync(path.join(__dirname, 'fixtures', 'toc-listed-policy.pdf')) })).json();
+    await (await fetch(`${base}/api/docs/${up.id}/events`)).text();
+    let doc = await (await fetch(`${base}/api/docs/${up.id}`)).json();
+    assert.equal(doc.coverages.length, 4);
+    assert.equal((await post(`/api/docs/${up.id}/toc`, { from: 9, to: 99 })).status, 400);
+    assert.equal((await post(`/api/docs/${up.id}/toc`, { from: 7, to: 8 })).status, 200);
+    await (await fetch(`${base}/api/docs/${up.id}/events`)).text();
+    doc = await (await fetch(`${base}/api/docs/${up.id}`)).json();
+    assert.equal(doc.coverages.length, 7);
+    assert.deepEqual(doc.meta.tocRange, { from: 7, to: 8 });
+    assert.ok(doc.tocAll.length >= 9);
+    await post(`/api/docs/${up.id}/toc`, { clear: true });
+    await (await fetch(`${base}/api/docs/${up.id}/events`)).text();
+    doc = await (await fetch(`${base}/api/docs/${up.id}`)).json();
+    assert.equal(doc.coverages.length, 4);
+    assert.equal(doc.meta.tocRange, null);
+  } finally {
+    server.close();
+  }
+});

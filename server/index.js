@@ -212,6 +212,26 @@ app.get('/api/docs/:id/analysis', (req, res) => {
   res.json({ results: out, running: !!(job && !job.done), states: job ? job.states : {} });
 });
 
+// 목차 쪽 직접 지정: { from, to } 를 저장하고 그 쪽을 목차로 다시 분석합니다. { clear: true } 면 자동 찾기로 되돌립니다.
+app.post('/api/docs/:id/toc', (req, res) => {
+  const id = store.checkId(req.params.id);
+  const meta = store.readCache(id, 'meta');
+  if (!meta) return res.status(404).json({ error: '문서가 없습니다.' });
+  const body = req.body || {};
+  const review = store.readReview(id);
+  if (body.clear) delete review.tocRange;
+  else {
+    const from = Number(body.from), to = Number(body.to || body.from);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > meta.numPages || to - from > 40) {
+      return res.status(400).json({ error: `목차 쪽은 1~${meta.numPages} 사이에서, 시작 쪽 ≤ 끝 쪽(최대 40쪽)으로 넣어 주십시오.` });
+    }
+    review.tocRange = { from, to };
+  }
+  store.writeReview(id, review);
+  jobs.start(id, meta.fileName);
+  res.json({ started: true });
+});
+
 // [PDF 글자 확인]: 앱이 한 쪽에서 읽은 글자 줄(머리글·쪽번호로 뺀 줄 표시)
 app.get('/api/docs/:id/pages/:n', (req, res) => {
   const id = store.checkId(req.params.id);

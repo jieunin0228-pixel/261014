@@ -46,6 +46,16 @@ const outDir = process.argv[2] || os.tmpdir();
     await page.waitForFunction(() => document.querySelectorAll('.card').length === 4);
     assert.deepEqual(uploads, [], 'PDF 가 어디로도 전송되지 않아야 합니다');
 
+    // 목차 쪽 직접 지정(브라우저 안에서 다시 분석)
+    await page.setInputFiles('#file', path.join(__dirname, '..', 'test', 'fixtures', 'toc-listed-policy.pdf'));
+    await page.waitForFunction(() => document.getElementById('summary').textContent.includes('자동 추출 담보 4개'), null, { timeout: 60000 });
+    await page.click('#toc-box > summary');
+    await page.fill('#toc-from', '7');
+    await page.fill('#toc-to', '8');
+    await page.click('#toc-apply');
+    await page.waitForFunction(() => document.getElementById('summary').textContent.includes('자동 추출 담보 7개'), null, { timeout: 60000 });
+    assert.deepEqual(uploads, [], 'PDF 가 어디로도 전송되지 않아야 합니다');
+
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.setViewportSize({ width: 400, height: 900 });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

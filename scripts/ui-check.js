@@ -59,8 +59,21 @@ const outDir = process.argv[2] || os.tmpdir();
     await page.setInputFiles('#file', path.join(__dirname, '..', 'samples', 'sample_policy.pdf'));
     await page.waitForFunction(() => document.getElementById('progress-msg').textContent.includes('이미 분석한 PDF'));
     await page.screenshot({ path: path.join(outDir, 'ui-2-cards.png'), fullPage: false });
+    // 목차 쪽 직접 지정: 목차를 자동으로 못 찾는 약관에서 7~8쪽을 목차로 지정하면 담보 후보가 늘어나야 합니다.
+    await page.setInputFiles('#file', path.join(__dirname, '..', 'test', 'fixtures', 'toc-listed-policy.pdf'));
+    await page.waitForFunction(() => document.getElementById('summary').textContent.includes('자동 추출 담보 4개'), null, { timeout: 60000 });
+    await page.click('#toc-box > summary');
+    assert.match(await page.textContent('#toc-state'), /자동으로 찾지 못했습니다/);
+    await page.fill('#toc-from', '7');
+    await page.fill('#toc-to', '8');
+    await page.click('#toc-apply');
+    await page.waitForFunction(() => document.getElementById('summary').textContent.includes('자동 추출 담보 7개'), null, { timeout: 60000 });
+    assert.match(await page.textContent('#toc-state'), /직접 지정한 목차 쪽\(7~8쪽\)/);
+    assert.equal(await page.locator('.leaf .tag.warn', { hasText: '목차 추정' }).count(), 3);
+    await page.screenshot({ path: path.join(outDir, 'ui-3-toc.png'), fullPage: false });
+
     assert.deepEqual(errors, []);
-    console.log(`화면 점검 통과. 캡처: ${outDir}/ui-1-tree.png, ui-2-cards.png`);
+    console.log(`화면 점검 통과. 캡처: ${outDir}/ui-1-tree.png, ui-2-cards.png, ui-3-toc.png`);
   } finally {
     await browser.close();
     server.close();

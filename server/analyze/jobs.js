@@ -6,6 +6,9 @@ const store = require('../store');
 const { extractPdf } = require('../pdf/extract');
 const { analyzeStructure, STRUCTURE_VERSION } = require('./pipeline');
 
+// 쪽별 글자 추출 방식이 바뀌면 올립니다. 같으면 목차 쪽 지정 등으로 다시 분석할 때 저장된 추출 결과를 그대로 씁니다.
+const EXTRACT_VERSION = 'extract-2';
+
 const jobs = new Map(); // id → { emitter, last, done, error }
 
 function isCached(id) {
@@ -14,7 +17,10 @@ function isCached(id) {
 }
 
 function start(id, fileName) {
+  const prev = jobs.get(id);
+  if (prev && prev.done) jobs.delete(id);
   if (jobs.has(id) && !jobs.get(id).done) return jobs.get(id);
+  // 목차 쪽 지정 등으로 다시 분석할 때 저장된 쪽별 추출 결과가 있으면 PDF 를 다시 읽지 않습니다.
   const job = { emitter: new EventEmitter(), last: null, done: false, error: null };
   job.emitter.setMaxListeners(50);
   jobs.set(id, job);
@@ -32,22 +38,27 @@ function start(id, fileName) {
 async function run(id, fileName, emit) {
   const startedAt = Date.now();
   emit({ stage: 'extract', done: 0, total: 0, message: 'PDF를 여는 중입니다.' });
-  const data = fs.readFileSync(store.pdfPath(id));
+  const oldMeta = store.readCache(id, 'meta');
+  const cachedPages = oldMeta && oldMeta.extractVersion === EXTRACT_VERSION ? store.readCache(id, 'pages') : null;
+  const data = cachedPages ? null : fs.readFileSync(store.pdfPath(id));
   let lastSent = 0;
-  const { pages } = await extractPdf(data, (n, total) => {
+  const { pages } = cachedPages ? { pages: cachedPages } : await extractPdf(data, (n, total) => {
     if (n === total || Date.now() - lastSent > 200) {
       lastSent = Date.now();
       emit({ stage: 'extract', done: n, total, message: `쪽별 글자 추출 ${n} / ${total}쪽` });
     }
   });
 
-  const { meta, structure, coverages } = analyzeStructure(pages, (done, total, message) => emit({ stage: 'structure', done, total, message }));
+  // 사용자가 목차 쪽을 지정했으면 그 쪽을 목차로 읽습니다.
+  const range = (store.readReview(id) || {}).tocRange;
+  const tocPages = range ? Array.from({ length: range.to - range.from + 1 }, (_, k) => range.from + k) : undefined;
+  const { meta, structure, coverages } = analyzeStructure(pages, (done, total, message) => emit({ stage: 'structure', done, total, message }), { tocPages });
   const previous = store.readCache(id, 'coverages');
   if (previous) remapReview(id, previous, coverages);
   store.writeCache(id, 'pages', pages);
   store.writeCache(id, 'structure', structure);
   store.writeCache(id, 'coverages', coverages);
-  store.writeCache(id, 'meta', { id, fileName, status: 'done', ...meta, createdAt: new Date().toISOString(), seconds: Math.round((Date.now() - startedAt) / 100) / 10 });
+  store.writeCache(id, 'meta', { id, fileName, status: 'done', ...meta, extractVersion: EXTRACT_VERSION, tocRange: range || null, createdAt: new Date().toISOString(), seconds: Math.round((Date.now() - startedAt) / 100) / 10 });
   emit({ stage: 'structure', done: 3, total: 3, message: '분석 결과를 저장했습니다.' });
 }
 

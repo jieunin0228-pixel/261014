@@ -48,33 +48,62 @@ function sectionTitle(line) {
   return { title: t, kind: /보통|주계약/.test(t) ? '보통약관' : '특별약관' };
 }
 
+// 목차 항목이 담보 이름 자체인 경우(예: "암진단비(유사암 제외)", "질병입원일당"): 보험금 종류로 끝나는 이름
+const BENEFIT_END = /(보험금|급여금|급부금|진단비|진단금|수술비|입원비|일당|치료비|통원비|간병비|자금|연금|지원금|축하금|위로금|보장금)(\s*[(（][^)）]*[)）])?$/;
+
 function levelOf(title) {
   if (ARTICLE_LINE.test(title)) return '조';
   if (CHAPTER_LINE.test(title)) return '관';
   const s = sectionTitle(title);
-  return s ? s.kind : '기타';
+  if (s) return s.kind;
+  if (BENEFIT_END.test(cleanTitle(title))) return '담보';
+  return '기타';
 }
 
-// 목차 쪽: 목차 줄이 6개 이상이고 그 줄이 본문 줄의 절반 이상인 쪽. 보통 문서 앞부분에 몰려 있습니다.
-function findToc(pages) {
+const LEADERS_ONLY = /^[\s|.·…ㆍ‧∙•_\-]*(\d{1,4})$/;
+
+// 목차 한 쪽의 줄을 항목으로 바꿉니다.
+//  - "제목 ······ 12" 형식은 그대로 읽습니다.
+//  - 제목이 길어 쪽번호가 다음 줄로 넘어간 경우("제목" / "······ 12")는 두 줄을 합칩니다.
+//  - lenient 이면(사용자가 목차 쪽을 지정한 경우) 쪽번호가 없어도 약관 제목·담보 이름 모양의 줄을 항목으로 읽습니다.
+function parseTocPage(p, lenient) {
+  const lines = p.lines.filter((l) => !l.noise).map((l) => l.t);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i];
+    const m = t.match(TOC_ENTRY);
+    if (m && !LEADERS_ONLY.test(t)) { out.push({ title: m[1].replace(/[.·…ㆍ‧∙•_\-\s|]+$/, '').trim(), printed: Number(m[2]) }); continue; }
+    const next = lines[i + 1] || '';
+    const nm = next.match(LEADERS_ONLY);
+    if (nm && t.length <= 70 && !BODY_ENDING.test(t)) { out.push({ title: t.replace(/[.·…ㆍ‧∙•_\-\s|]+$/, '').trim(), printed: Number(nm[1]) }); i++; continue; }
+    if (lenient && t.length <= 70 && !BODY_ENDING.test(t) && levelOf(t) !== '기타' && !/^목\s*차$/.test(t)) out.push({ title: t.trim(), printed: null });
+  }
+  return out.filter((e) => e.title && !/^목\s*차$/.test(e.title)).map((e) => ({ ...e, level: levelOf(e.title), tocPage: p.n }));
+}
+
+// 목차 쪽 찾기. forcedPages(사용자가 지정한 쪽)가 있으면 그 쪽을 목차로 보고 너그럽게 읽습니다.
+// 자동으로 찾을 때는 "제목 ··· 쪽번호" 모양의 줄이 6개 이상이고 그 줄이 본문 줄의 40% 이상인 쪽을 목차로 보며,
+// 처음 나온 목차 묶음만 씁니다(뒤쪽 표의 숫자 열을 목차로 오인하지 않도록).
+function findToc(pages, { forcedPages } = {}) {
+  if (forcedPages && forcedPages.length) {
+    const set = new Set(forcedPages);
+    const tocPages = pages.filter((p) => set.has(p.n)).map((p) => p.n);
+    return { tocPages, entries: pages.filter((p) => set.has(p.n)).flatMap((p) => parseTocPage(p, true)), forced: true };
+  }
   const tocPages = [];
   const entries = [];
   for (const p of pages) {
     const body = p.lines.filter((l) => !l.noise);
-    const hits = body.filter((l) => TOC_ENTRY.test(l.t));
-    const isToc = hits.length >= 6 && hits.length >= body.length * 0.5;
+    const hits = body.filter((l) => TOC_ENTRY.test(l.t) || LEADERS_ONLY.test(l.t));
+    const isToc = hits.length >= 6 && hits.length >= body.length * 0.4;
     if (!isToc) {
       if (tocPages.length && p.n - tocPages[tocPages.length - 1] > 2) break; // 목차가 끝난 뒤의 본문
       continue;
     }
     tocPages.push(p.n);
-    for (const l of hits) {
-      const m = l.t.match(TOC_ENTRY);
-      const title = m[1].replace(/[.·…ㆍ‧∙•_\-\s]+$/, '').trim();
-      entries.push({ title, printed: Number(m[2]), level: levelOf(title), tocPage: p.n });
-    }
+    entries.push(...parseTocPage(p, false));
   }
-  return { tocPages, entries };
+  return { tocPages, entries, forced: false };
 }
 
 // 머리글·바닥글·목차 쪽을 뺀 본문 줄을 한 줄로 이어 붙입니다. 각 줄은 쪽 번호와 쪽 안 줄 번호를 기억합니다.
@@ -211,4 +240,4 @@ function locateTocEntries(missing, stream) {
   return forced;
 }
 
-module.exports = { findToc, bodyStream, splitSections, matchToc, locateTocEntries, sectionTitle, cleanTitle, parseArticle, ARTICLE_LINE, TOC_ENTRY, norm };
+module.exports = { BENEFIT_END, findToc, bodyStream, splitSections, matchToc, locateTocEntries, sectionTitle, cleanTitle, parseArticle, ARTICLE_LINE, TOC_ENTRY, norm };

@@ -120,13 +120,28 @@
     return { n, total: pages.length, printed: p.printed, columns: p.columns || 1, scanned: p.scanned, lines: p.lines.map((l) => ({ t: l.t, noise: !!l.noise })) };
   }
 
+  // 목차 쪽 지정 후 다시 분석(브라우저에 저장된 쪽별 추출 결과를 씁니다).
+  async function setToc(id, range, onProgress = () => {}) {
+    const d = await get('docs', id);
+    const pages = await get('pages', id);
+    if (!d || !pages) throw new Error('이 브라우저에 저장된 결과가 없습니다. PDF를 다시 올려 주십시오.');
+    let tocPages;
+    if (!range.clear) {
+      const from = Number(range.from), to = Number(range.to || range.from);
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > pages.length || to - from > 40) throw new Error(`목차 쪽은 1~${pages.length} 사이에서, 시작 쪽 ≤ 끝 쪽(최대 40쪽)으로 넣어 주십시오.`);
+      tocPages = Array.from({ length: to - from + 1 }, (_, k) => from + k);
+    }
+    const { meta, structure, coverages } = C.analyzeStructure(pages, (done, total, message) => onProgress(0.5 + (done / total) * 0.5, message), { tocPages });
+    await put('docs', id, { meta: { ...d.meta, ...meta, tocRange: tocPages ? { from: tocPages[0], to: tocPages[tocPages.length - 1] } : null }, structure, coverages });
+  }
+
   async function save(id, review) {
     const ok = await put('reviews', id, { ...review, savedAt: new Date().toISOString() });
     return ok;
   }
 
   window.CoverageApi = {
-    analyze, list, open, save, pageText,
+    analyze, list, open, save, pageText, setToc,
     sampleUrl: 'sample_policy.pdf',
     autoOpenSample: true,
     storageNote: '올린 PDF는 어디로도 전송되지 않고 이 브라우저 안에서만 읽습니다. 분석 결과와 수정 내용도 이 브라우저에만 저장되며, 다른 사람이나 다른 PC에서는 보이지 않습니다.',

@@ -32,6 +32,19 @@
     <div id="peek-lines" class="peek-lines"></div>
   </details>
 
+  <details id="toc-box" class="peek" hidden>
+    <summary>목차 인식 결과 <span id="toc-count" class="muted"></span></summary>
+    <p id="toc-state" class="muted"></p>
+    <div class="row">
+      <label>목차 쪽 <input id="toc-from" type="number" min="1" placeholder="시작"></label>
+      <label>~ <input id="toc-to" type="number" min="1" placeholder="끝"></label>
+      <button id="toc-apply" class="btn small primary">이 쪽을 목차로 다시 읽기</button>
+      <button id="toc-clear" class="btn small" hidden>자동 찾기로 되돌리기</button>
+    </div>
+    <p class="muted">목차를 직접 지정하면 그 쪽의 약관 제목으로 본문을 나누고, 목차에 담보 이름이 나열돼 있으면 담보 후보로 씁니다. 직접 고친 담보 이름·분류는 같은 담보로 옮겨집니다.</p>
+    <div class="table-scroll"><table class="grid" id="toc-table"></table></div>
+  </details>
+
   <main id="workspace" hidden>
     <aside class="tree-panel">
       <div class="tree-tools">
