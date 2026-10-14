@@ -25,6 +25,12 @@
 
   <section id="warnings"></section>
   <section id="summary" class="summary" hidden></section>
+  <details id="page-peek" class="peek" hidden>
+    <summary>PDF 글자 확인 (담보가 이상하게 나올 때 원인 확인용)</summary>
+    <p class="muted">앱이 PDF의 한 쪽에서 읽은 글자를 줄 단위로 보여 줍니다. 흐린 줄은 머리글·쪽번호로 보고 분석에서 뺀 줄입니다. 조문 제목이나 보험금 이름이 이상하게 읽히면 그 줄의 모양을 알려 주십시오.</p>
+    <div class="row"><label>PDF 쪽 <input id="peek-page" type="number" min="1" value="1"></label><button id="peek-go" class="btn small">보기</button><span id="peek-info" class="muted"></span></div>
+    <div id="peek-lines" class="peek-lines"></div>
+  </details>
 
   <main id="workspace" hidden>
     <aside class="tree-panel">

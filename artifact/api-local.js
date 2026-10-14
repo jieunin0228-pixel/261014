@@ -109,7 +109,15 @@
   async function open(id) {
     const d = await get('docs', id);
     if (!d) throw new Error('이 브라우저에 저장된 분석 결과가 없습니다. PDF를 다시 올려 주십시오.');
+    if (d.meta.version !== C.STRUCTURE_VERSION) throw new Error('앱의 약관 읽기 규칙이 개선되었습니다. 같은 PDF를 [약관 PDF 올리기]로 다시 올려 주십시오.');
     return C.docView(d.meta, d.structure, d.coverages, (await get('reviews', id)) || {});
+  }
+
+  async function pageText(id, n) {
+    const pages = await get('pages', id);
+    if (!pages || !Number.isInteger(n) || n < 1 || n > pages.length) throw new Error(`1~${pages ? pages.length : 0}쪽 사이의 번호를 넣어 주십시오.`);
+    const p = pages[n - 1];
+    return { n, total: pages.length, printed: p.printed, columns: p.columns || 1, scanned: p.scanned, lines: p.lines.map((l) => ({ t: l.t, noise: !!l.noise })) };
   }
 
   async function save(id, review) {
@@ -118,7 +126,7 @@
   }
 
   window.CoverageApi = {
-    analyze, list, open, save,
+    analyze, list, open, save, pageText,
     sampleUrl: 'sample_policy.pdf',
     autoOpenSample: true,
     storageNote: '올린 PDF는 어디로도 전송되지 않고 이 브라우저 안에서만 읽습니다. 분석 결과와 수정 내용도 이 브라우저에만 저장되며, 다른 사람이나 다른 PC에서는 보이지 않습니다.',

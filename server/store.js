@@ -40,6 +40,7 @@ const safeKey = (k) => String(k).replace(/[^A-Za-z0-9_-]/g, '_');
 const analysisPath = (id, coverageId) => path.join(cacheDir(id), 'analysis', `${safeKey(coverageId)}.json`);
 const readAnalysis = (id, coverageId) => readJson(analysisPath(id, coverageId));
 const writeAnalysis = (id, coverageId, value) => writeJson(analysisPath(id, coverageId), value);
+const removeAnalysis = (id, coverageId) => fs.rmSync(analysisPath(id, coverageId), { force: true });
 function listAnalyses(id) {
   const dir = path.join(cacheDir(id), 'analysis');
   if (!fs.existsSync(dir)) return [];
@@ -60,4 +61,4 @@ function listDocs() {
     .sort((a, b) => String(b.openedAt || b.createdAt).localeCompare(String(a.openedAt || a.createdAt)));
 }
 
-module.exports = { DATA_DIR, dirs, checkId, pdfPath, cacheDir, readCache, writeCache, readReview, writeReview, listDocs, readAnalysis, writeAnalysis, listAnalyses, readMaster, writeMaster, clearMaster };
+module.exports = { DATA_DIR, dirs, checkId, pdfPath, cacheDir, readCache, writeCache, readReview, writeReview, listDocs, readAnalysis, writeAnalysis, removeAnalysis, listAnalyses, readMaster, writeMaster, clearMaster };

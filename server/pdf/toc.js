@@ -2,8 +2,22 @@
 // 본문에서 "약관 제목 줄 + 곧이어 제1조"가 나오는 곳(또는 조문 번호가 제1조로 다시 시작하는 곳)을 구간 경계로 삼고,
 // 목차가 있으면 목차 항목과 짝을 지어 목차 순서·인쇄 쪽번호를 확인합니다. 목차에만 있고 본문에서 못 찾은 약관은 경고로 남깁니다.
 
-const ARTICLE_LINE = /^제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[(（]\s*([^)）]{1,60})[)）]/;
-const FIRST_ARTICLE = /^제\s*1\s*조\s*[(（]/;
+// 조문 제목 줄: "제3조(보험금의 지급사유)", "제3조【보험금의 지급사유】", "제3조[…]", "제3조「…」", "제3조의2(…)",
+// 괄호 없이 "제3조 보험금의 지급사유"처럼 제목만 있는 줄도 인정합니다(본문 문장과 헷갈리지 않도록 조건을 둡니다).
+const ARTICLE_BRACKET = /^제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*[(（【\[〔〈<「『]\s*([^)）】\]〕〉>」』]{1,60}?)\s*[)）】\]〕〉>」』]/;
+const ARTICLE_BARE = /^제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s+([가-힣][가-힣A-Za-z0-9·ㆍ,\s]{0,38}[가-힣])\s*$/;
+const BARE_NOT_TITLE = /제\s*\d+\s*(항|호|조)|(은|는|이|가|을|를|의|에|에서|로|으로|와|과|및|또는|및|하여|하고|하며|한|할|된|되는|따라)$/;
+function parseArticle(line) {
+  const t = String(line || '').trim();
+  let m = t.match(ARTICLE_BRACKET);
+  if (!m) {
+    m = t.match(ARTICLE_BARE);
+    if (!m || BARE_NOT_TITLE.test(m[3]) || t.length > 45) return null;
+  }
+  return { no: Number(m[1]), sub: m[2] ? Number(m[2]) : null, title: m[3].trim() };
+}
+const ARTICLE_LINE = { test: (t) => !!parseArticle(t) };
+const FIRST_ARTICLE = { test: (t) => { const a = parseArticle(t); return !!a && a.no === 1 && !a.sub; } };
 const CHAPTER_LINE = /^제\s*\d+\s*관\s*\S/;
 // 목차 줄: 제목 뒤에 점선(또는 넓은 공백)과 쪽번호
 const TOC_ENTRY = /^(.*?[^\s|])[\s|]*(?:[.·…ㆍ‧∙•_\-]{2,}|\s{2,}|\s(?=\d{1,4}$))[\s|]*(\d{1,4})$/;
@@ -109,8 +123,8 @@ function splitSections(stream) {
     const end = k + 1 < heads.length ? heads[k + 1].start : stream.length;
     const articles = [];
     for (let i = h.start; i < end; i++) {
-      const m = stream[i].t.match(ARTICLE_LINE);
-      if (m) articles.push({ no: Number(m[1]), sub: m[2] ? Number(m[2]) : null, title: m[3].trim(), line: i, page: stream[i].p });
+      const a = parseArticle(stream[i].t);
+      if (a) articles.push({ ...a, line: i, page: stream[i].p });
     }
     if (h.kind !== '별표' && !articles.length) return;
     sections.push({
@@ -151,4 +165,4 @@ function matchToc(sections, toc, pages) {
   return { entries: tops, missing };
 }
 
-module.exports = { findToc, bodyStream, splitSections, matchToc, sectionTitle, cleanTitle, ARTICLE_LINE, TOC_ENTRY, norm };
+module.exports = { findToc, bodyStream, splitSections, matchToc, sectionTitle, cleanTitle, parseArticle, ARTICLE_LINE, TOC_ENTRY, norm };

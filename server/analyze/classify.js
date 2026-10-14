@@ -65,6 +65,26 @@ function findBenefits(text) {
   return out;
 }
 
+// 약관이 참조하는 보험금 지급표 별표. 같은 번호의 별표가 여럿이면(특약마다 별표1이 있는 경우) 그 약관 바로 뒤의 것을 고릅니다.
+const PAY_TABLE = /지급|보험금|급부|급여/;
+function referencedPayTables(section, sections, stream) {
+  let text = '';
+  for (let i = section.start; i < section.end; i++) text += `${stream[i].t}\n`;
+  const nums = [...new Set([...text.matchAll(/별표\s*(\d+)/g)].map((m) => Number(m[1])))];
+  const idx = sections.indexOf(section);
+  const after = sections.slice(idx + 1);
+  const tables = [];
+  for (const n of nums) {
+    const t = after.find((x) => x.kind === '별표' && x.appendixNo === n) || sections.find((x) => x.kind === '별표' && x.appendixNo === n);
+    if (t && PAY_TABLE.test(t.title) && !tables.includes(t)) tables.push(t);
+  }
+  // 번호 없이 "별표"만 언급하면 바로 뒤에 붙은 지급표 별표를 씁니다.
+  if (!tables.length && /별표/.test(text)) {
+    for (const x of after) { if (x.kind !== '별표') break; if (PAY_TABLE.test(x.title)) { tables.push(x); break; } }
+  }
+  return tables;
+}
+
 // 줄바꿈으로 나뉜 항목(호·항·표의 한 행)을 한 문장으로 잇습니다. 앞쪽은 항목 기호(1. ① 가.)가 나올 때까지,
 // 뒤쪽은 다음 항목 기호나 다른 보험금명이 나오기 전까지 최대 3줄을 붙입니다.
 const ITEM_START = /^(\d+\.|[①-⑳]|[가-하]\.|\(\d+\))\s*/;
@@ -100,6 +120,18 @@ function extractCoverages(sections, stream, pages) {
       }
     }
     if (!found.size) {
+      // 조문에 보험금명이 없고 "별표N 보험금 지급기준표"를 참조하는 약관은 그 별표에서 보험금명을 찾습니다.
+      for (const ap of referencedPayTables(s, sections, stream)) {
+        for (let i = ap.start; i < ap.end; i++) {
+          const line = stream[i];
+          for (const name of findBenefits(line.t)) {
+            if (!found.has(name)) found.set(name, { mentions: 0, fromAppendix: ap.title, evidence: { page: line.p, printed: printedOf.get(line.p) ?? null, lineIndex: line.i, article: ap.title, quote: line.t } });
+            found.get(name).mentions += 1;
+          }
+        }
+      }
+    }
+    if (!found.size) {
       // 지급사유 조문에서 보험금명을 못 찾은 약관은 약관 제목을 담보로 올려 빠뜨리지 않게 합니다.
       const first = stream[s.start];
       const c = categorize(s.title);
@@ -113,7 +145,9 @@ function extractCoverages(sections, stream, pages) {
     let k = 0;
     for (const [name, h] of found) {
       k += 1;
-      items.push({ id: `${s.id}#${k}`, name, ...categorize(name, h.evidence.quote), group: s.title, sectionId: s.id, sectionTitle: s.title, evidence: h.evidence, mentions: h.mentions });
+      const c = categorize(name, h.evidence.quote);
+      if (h.fromAppendix) c.reason += ` (보험금명은 약관이 참조한 ${h.fromAppendix}에서 찾았습니다.)`;
+      items.push({ id: `${s.id}#${k}`, name, ...c, group: s.title, sectionId: s.id, sectionTitle: s.title, evidence: h.evidence, mentions: h.mentions, fromAppendix: h.fromAppendix || null });
     }
   }
   return items;

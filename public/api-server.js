@@ -16,15 +16,7 @@
         try { res = JSON.parse(xhr.responseText); } catch { /* 빈 응답 */ }
         if (xhr.status !== 200) return reject(new Error(res.error || '업로드에 실패했습니다.'));
         if (res.cached) return resolve(res);
-        const es = new EventSource(`/api/docs/${res.id}/events`);
-        es.onmessage = (m) => {
-          const ev = JSON.parse(m.data);
-          if (ev.stage === 'extract') onProgress(0.1 + (ev.total ? ev.done / ev.total : 0) * 0.8, ev.message);
-          else if (ev.stage === 'structure') onProgress(0.9 + (ev.done / ev.total) * 0.1, ev.message);
-          else if (ev.stage === 'done') { es.close(); resolve(res); }
-          else if (ev.stage === 'error') { es.close(); reject(new Error(ev.message)); }
-        };
-        es.onerror = () => { es.close(); reject(new Error('진행 상황을 받지 못했습니다. 잠시 뒤 [최근 분석한 약관 열기]에서 다시 열어 주십시오.')); };
+        followStructure(res.id, onProgress).then(() => resolve(res), reject);
       };
       xhr.send(file);
     });
@@ -34,10 +26,38 @@
     return (await fetch('/api/docs')).json();
   }
 
-  async function open(id) {
-    const res = await fetch(`/api/docs/${id}`);
+  // SSE 로 1단계 분석 진행 상황을 받다가 끝나면 돌아옵니다.
+  function followStructure(id, onProgress) {
+    return new Promise((resolve, reject) => {
+      const es = new EventSource(`/api/docs/${id}/events`);
+      es.onmessage = (m) => {
+        const ev = JSON.parse(m.data);
+        if (ev.stage === 'extract') onProgress(0.1 + (ev.total ? ev.done / ev.total : 0) * 0.8, ev.message);
+        else if (ev.stage === 'structure') onProgress(0.9 + (ev.done / ev.total) * 0.1, ev.message);
+        else if (ev.stage === 'done') { es.close(); resolve(); }
+        else if (ev.stage === 'error') { es.close(); reject(new Error(ev.message)); }
+      };
+      es.onerror = () => { es.close(); reject(new Error('진행 상황을 받지 못했습니다. 잠시 뒤 [최근 분석한 약관 열기]에서 다시 열어 주십시오.')); };
+    });
+  }
+
+  async function open(id, onProgress = () => {}) {
+    let res = await fetch(`/api/docs/${id}`);
+    if (res.status === 409) {
+      // 앱의 약관 읽기 규칙이 바뀌어 서버가 다시 분석하는 중입니다.
+      onProgress(0.05, '앱의 약관 읽기 규칙이 개선되어 이 약관을 다시 분석합니다. 직접 고친 내용은 그대로 옮겨 둡니다.');
+      await followStructure(id, onProgress);
+      res = await fetch(`/api/docs/${id}`);
+    }
     if (!res.ok) throw new Error('분석 결과를 열지 못했습니다.');
     return res.json();
+  }
+
+  async function pageText(id, n) {
+    const res = await fetch(`/api/docs/${id}/pages/${n}`);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || '그 쪽을 읽지 못했습니다.');
+    return body;
   }
 
   async function save(id, review) {
@@ -69,7 +89,7 @@
   const resetMaster = async () => json(await fetch('/api/codemaster', { method: 'DELETE' }));
 
   window.CoverageApi = {
-    analyze, list, open, save,
+    analyze, list, open, save, pageText,
     supportsAnalysis: true, config, results, runAnalysis, stopAnalysis, watchAnalysis, uploadMaster, resetMaster, masterDownloadUrl: '/api/codemaster/download',
     sampleUrl: 'samples/sample_policy.pdf',
     storageNote: '올린 PDF와 분석 결과는 이 PC의 data 폴더에만 저장됩니다. 같은 PDF를 다시 올리면 저장된 결과를 바로 엽니다.',

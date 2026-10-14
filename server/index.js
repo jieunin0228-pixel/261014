@@ -84,6 +84,12 @@ app.get('/api/docs/:id', (req, res) => {
   const id = store.checkId(req.params.id);
   const meta = store.readCache(id, 'meta');
   if (!meta || meta.status !== 'done') return res.status(404).json({ error: '분석 결과가 없습니다.', meta });
+  // 분석 규칙이 바뀐 뒤 처음 여는 문서는 저장된 PDF 로 다시 분석합니다(사용자 수정은 옮겨 둡니다).
+  if (meta.version !== jobs.STRUCTURE_VERSION) {
+    if (!fs.existsSync(store.pdfPath(id))) return res.status(404).json({ error: '원본 PDF가 없어 다시 분석할 수 없습니다. PDF를 다시 올려 주십시오.' });
+    jobs.start(id, meta.fileName);
+    return res.status(409).json({ reanalyzing: true, error: '앱의 약관 읽기 규칙이 개선되어 이 약관을 다시 분석합니다.' });
+  }
   res.json(docView(meta, store.readCache(id, 'structure'), store.readCache(id, 'coverages'), store.readReview(id)));
 });
 
@@ -201,6 +207,16 @@ app.get('/api/docs/:id/analysis', (req, res) => {
   }
   const job = analysisJobs.jobs.get(id);
   res.json({ results: out, running: !!(job && !job.done), states: job ? job.states : {} });
+});
+
+// [PDF 글자 확인]: 앱이 한 쪽에서 읽은 글자 줄(머리글·쪽번호로 뺀 줄 표시)
+app.get('/api/docs/:id/pages/:n', (req, res) => {
+  const id = store.checkId(req.params.id);
+  const pages = store.readCache(id, 'pages');
+  const n = Number(req.params.n);
+  if (!pages || !Number.isInteger(n) || n < 1 || n > pages.length) return res.status(404).json({ error: `1~${pages ? pages.length : 0}쪽 사이의 번호를 넣어 주십시오.` });
+  const p = pages[n - 1];
+  res.json({ n, total: pages.length, printed: p.printed, columns: p.columns || 1, scanned: p.scanned, lines: p.lines.map((l) => ({ t: l.t, noise: !!l.noise })) });
 });
 
 // 원본 PDF(3단계 뷰어용)

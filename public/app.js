@@ -63,7 +63,7 @@
   }
 
   async function openDoc(id) {
-    try { doc = await api.open(id); } catch (err) { showProgress(0, err.message); return; }
+    try { doc = await api.open(id, showProgress); } catch (err) { showProgress(0, err.message); return; }
     review = {
       edits: doc.review.edits || {}, added: doc.review.added || [], selected: doc.review.selected || [],
       reviewStatus: doc.review.reviewStatus || {}, fieldEdits: doc.review.fieldEdits || {}, product: doc.review.product || {},
@@ -87,7 +87,10 @@
     const example = (m.lastFileName || m.fileName) === 'sample_policy.pdf' ? '<span class="example">예시: 시험용 가상 약관</span>' : '';
     $('summary').innerHTML = `<strong>${esc(m.lastFileName || m.fileName)}</strong>${example}
       <span>전체 ${m.numPages}쪽</span><span>약관 ${m.sectionCount}개</span><span>별표 ${m.appendixCount}개</span>
-      <span>자동 추출 담보 ${m.coverageCount}개</span><span>인쇄 쪽번호 인식 ${m.printedPagesFound}쪽</span>`;
+      <span>자동 추출 담보 ${m.coverageCount}개</span><span>조문 제목 인식 ${m.articleCount ?? '-'}개</span>
+      <span>인쇄 쪽번호 인식 ${m.printedPagesFound}쪽</span>${m.twoColumnPages ? `<span>2단 편집 ${m.twoColumnPages}쪽</span>` : ''}`;
+    $('page-peek').hidden = false;
+    $('peek-page').max = m.numPages;
     $('warnings').innerHTML = (m.warnings || []).map((w) => {
       let detail = '';
       if (w.pages) detail = `<div class="muted">해당 PDF 쪽: ${w.pages.slice(0, 40).join(', ')}${w.pages.length > 40 ? ' …' : ''}</div>`;
@@ -95,6 +98,23 @@
       return `<div class="warning ${w.type === 'ocr' ? 'strong' : ''}"><strong>${w.type === 'ocr' ? 'OCR 필요' : '확인 필요'}</strong> ${esc(w.message)}${detail}</div>`;
     }).join('');
   }
+
+  // ───────────── PDF 글자 확인 ─────────────
+  async function peek() {
+    const n = Number($('peek-page').value);
+    try {
+      const p = await api.pageText(doc.meta.id, n);
+      $('peek-info').textContent = `PDF ${p.n}쪽 / 전체 ${p.total}쪽 · 인쇄 쪽번호 ${p.printed ?? '미확인'} · ${p.columns === 2 ? '2단 편집으로 읽음' : '1단으로 읽음'}${p.scanned ? ' · 스캔 쪽(글자 없음)' : ''}`;
+      $('peek-lines').innerHTML = p.lines.length
+        ? p.lines.map((l) => `<div class="${l.noise ? 'noise' : ''}">${esc(l.t)}</div>`).join('')
+        : '<div class="noise">이 쪽에서 읽은 글자가 없습니다.</div>';
+    } catch (err) {
+      $('peek-info').textContent = err.message;
+      $('peek-lines').innerHTML = '';
+    }
+  }
+  $('peek-go').addEventListener('click', peek);
+  $('peek-page').addEventListener('keydown', (e) => { if (e.key === 'Enter') peek(); });
 
   // ───────────── 트리 ─────────────
   const coverages = () => doc.coverages;

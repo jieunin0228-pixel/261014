@@ -183,3 +183,75 @@ test('목차·쪽번호가 없고 제목에 꼬리표가 붙은 약관도 구간
   const covs = extractCoverages(secs, s2, p2).map((c) => `${c.category}:${c.name}`);
   assert.deepEqual(covs, ['사망:사망보험금', '사망:재해사망보험금', '사망:교통재해사망보험금', '장해:고도장해보험금', '치료:수술보험금', '진단:암진단보험금']);
 });
+
+test('실제 약관 변형 형식: 2단 편집·【】 조문·괄호 없는 조문·번호 붙은 특약 제목·지급기준표 별표', async () => {
+  const { pages: p3 } = await extractPdf(fs.readFileSync(path.join(__dirname, 'fixtures', 'variant-policy.pdf')));
+  assert.ok(p3.every((p) => p.columns === 2), '모든 쪽을 2단으로 읽어야 합니다');
+  // 2단을 왼쪽 단부터 읽으므로 조문 제목 다음 줄이 그 조문의 본문입니다.
+  const first = p3[0].lines.map((l) => l.t);
+  assert.ok(first[first.indexOf('제2조【보험금의 지급사유】') + 1].startsWith('회사는 피보험자에게'));
+  const s3 = bodyStream(p3, findToc(p3).tocPages);
+  const secs = splitSections(s3);
+  assert.deepEqual(secs.map((s) => `${s.kind}:${s.title}`), ['보통약관:무배당 변형건강보험 보통약관', '특별약관:무배당 암진단특약 약관', '별표:별표1 보험금 지급기준표', '특별약관:무배당 질병입원특약 약관']);
+  assert.ok(secs[1].articles.some((a) => a.no === 2 && a.title === '보험금의 지급사유'));
+  const covs = extractCoverages(secs, s3, p3);
+  assert.deepEqual(covs.map((c) => `${c.group}/${c.name}/${c.category}`), [
+    '무배당 변형건강보험 보통약관/사망보험금/사망',
+    '무배당 암진단특약 약관/암진단보험금/진단',
+    '무배당 암진단특약 약관/유사암진단보험금/진단',
+    '무배당 질병입원특약 약관/질병입원급여금/입원',
+  ]);
+  assert.match(covs[1].reason, /별표1 보험금 지급기준표에서 찾았습니다/);
+});
+
+test('1단 쪽(목차·표·본문)은 2단으로 잘못 읽지 않는다', () => {
+  assert.ok(pages.every((p) => (p.columns || 1) === 1));
+});
+
+test('조문 제목 형식 변형을 읽고 본문 문장은 제목으로 보지 않는다', () => {
+  const { parseArticle } = require('../server/pdf/toc');
+  assert.deepEqual(parseArticle('제3조【보험금의 지급사유】'), { no: 3, sub: null, title: '보험금의 지급사유' });
+  assert.deepEqual(parseArticle('제 3 조 [보험금의 지급]'), { no: 3, sub: null, title: '보험금의 지급' });
+  assert.deepEqual(parseArticle('제3조의2「특칙」'), { no: 3, sub: 2, title: '특칙' });
+  assert.deepEqual(parseArticle('제1조 목적'), { no: 1, sub: null, title: '목적' });
+  assert.equal(parseArticle('제3조 제1항에 따라 지급합니다.'), null);
+  assert.equal(parseArticle('제3조 제1항의 보험금'), null);
+  assert.equal(parseArticle('제3조에서 정한 보험금을'), null);
+});
+
+test('서버: 읽기 규칙이 바뀐 문서는 열 때 다시 분석하고, 직접 고친 내용을 새 담보로 옮긴다', async () => {
+  const store = require('../server/store');
+  const app = require('../server/index');
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const up = await (await fetch(`${base}/api/upload`, { method: 'POST', body: fs.readFileSync(path.join(__dirname, 'fixtures', 'no-toc-policy.pdf')) })).json();
+    await (await fetch(`${base}/api/docs/${up.id}/events`)).text();
+    const doc = await (await fetch(`${base}/api/docs/${up.id}`)).json();
+    const surgery = doc.coverages.find((c) => c.name === '수술보험금');
+    await fetch(`${base}/api/docs/${up.id}/review`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits: { [surgery.id]: { name: '수술비(고침)' } }, selected: [surgery.id] }) });
+    // 옛 규칙으로 분석한 것처럼 만들고, 담보 ID 도 옛 번호로 바꿔 둡니다.
+    const meta = store.readCache(up.id, 'meta');
+    store.writeCache(up.id, 'meta', { ...meta, version: 'structure-0' });
+    const old = store.readCache(up.id, 'coverages').map((c) => ({ ...c, id: `OLD-${c.id}` }));
+    store.writeCache(up.id, 'coverages', old);
+    const review = store.readReview(up.id);
+    store.writeReview(up.id, { ...review, edits: { [`OLD-${surgery.id}`]: { name: '수술비(고침)' } }, selected: [`OLD-${surgery.id}`] });
+
+    const stale = await fetch(`${base}/api/docs/${up.id}`);
+    assert.equal(stale.status, 409);
+    await (await fetch(`${base}/api/docs/${up.id}/events`)).text();
+    const fresh = await (await fetch(`${base}/api/docs/${up.id}`)).json();
+    const moved = fresh.coverages.find((c) => c.id === surgery.id);
+    assert.equal(moved.name, '수술비(고침)');
+    assert.deepEqual(fresh.review.selected, [surgery.id]);
+
+    const page = await (await fetch(`${base}/api/docs/${up.id}/pages/1`)).json();
+    assert.equal(page.n, 1);
+    assert.ok(page.lines.some((l) => l.t.startsWith('제1조(목적)')));
+    assert.equal((await fetch(`${base}/api/docs/${up.id}/pages/99`)).status, 404);
+  } finally {
+    server.close();
+  }
+});

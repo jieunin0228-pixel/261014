@@ -3,7 +3,7 @@ const { findToc, bodyStream, splitSections, matchToc } = require('../pdf/toc');
 const { extractCoverages, applyOverrides, CATEGORIES } = require('./classify');
 
 // 추출 규칙을 고치면 이 값을 올립니다. 값이 다른 캐시는 다시 분석합니다(사용자 수정·검토 기록은 별도로 저장되어 유지됩니다).
-const STRUCTURE_VERSION = 'structure-1';
+const STRUCTURE_VERSION = 'structure-2';
 
 // onStep(done, total, message) 로 진행 단계를 알립니다.
 function analyzeStructure(pages, onStep = () => {}) {
@@ -28,11 +28,20 @@ function analyzeStructure(pages, onStep = () => {}) {
   const guessed = sections.filter((s) => s.guessed);
   if (guessed.length) warnings.push({ type: 'title', message: `제목을 확인하지 못한 구간이 ${guessed.length}개 있습니다. 담보 편집에서 중분류 이름을 고쳐 주십시오.`, items: guessed.map((s) => ({ title: s.title, pdfPage: s.startPage })) });
 
+  const articleCount = sections.reduce((n, x) => n + x.articles.length, 0);
+  if (!articleCount && pages.some((p) => !p.scanned && !p.blank)) {
+    warnings.push({ type: 'no-article', message: '조문 제목(예: 제1조(목적))을 하나도 찾지 못해 담보를 나눌 수 없었습니다. 아래 [PDF 글자 확인]에서 조문이 시작하는 쪽을 열어, 조문 제목 줄이 어떤 모양으로 읽히는지 알려 주십시오.' });
+  }
+  const titleOnly = coverages.filter((c) => c.fromTitle);
+  if (titleOnly.length) {
+    warnings.push({ type: 'title-only', message: `보험금 이름을 찾지 못해 약관 제목을 담보명으로 대신 쓴 약관이 ${titleOnly.length}개 있습니다. 이 약관의 지급사유 조문에서 보험금 이름이 어떻게 적혀 있는지 확인해 주십시오.`, items: titleOnly.map((c) => ({ title: c.name, pdfPage: c.evidence && c.evidence.page })) });
+  }
+
   const meta = {
     version: STRUCTURE_VERSION, numPages: pages.length, textPages: pages.filter((p) => !p.scanned && !p.blank).length, scannedPages,
     printedPagesFound: pages.filter((p) => p.printed != null).length,
     sectionCount: sections.filter((s) => s.kind !== '별표').length, appendixCount: sections.filter((s) => s.kind === '별표').length,
-    coverageCount: coverages.length, warnings,
+    coverageCount: coverages.length, articleCount, twoColumnPages: pages.filter((p) => p.columns === 2).length, warnings,
   };
   return { meta, structure: { tocPages: toc.tocPages, toc: tocMatch.entries, sections }, coverages };
 }

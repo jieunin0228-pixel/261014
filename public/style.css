@@ -99,6 +99,14 @@ dialog label.check { display: flex; gap: 6px; align-items: center; }
 }
 @media (prefers-reduced-motion: reduce) { #bar-fill { transition: none; } }
 
+.peek { margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.peek summary { cursor: pointer; }
+.peek label { display: inline-flex; gap: 6px; align-items: center; }
+#peek-page { width: 90px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.peek-lines { margin-top: 8px; max-height: 420px; overflow: auto; font: 13px/1.6 var(--font-body); border-top: 1px solid var(--line-soft); padding-top: 6px; }
+.peek-lines div { overflow-wrap: anywhere; }
+.peek-lines .noise { color: var(--muted); opacity: .6; }
+
 /* ───── 2단계: 분석 막대·코드마스터·결과 영역 ───── */
 .analysis-bar, .panel-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--bg); }
 .analysis-bar .row { margin-top: 0; }

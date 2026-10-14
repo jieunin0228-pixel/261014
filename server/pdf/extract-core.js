@@ -8,17 +8,38 @@ const SCAN_CHAR_LIMIT = 20;
 // 쪽 위·아래 이 비율 안에 있는 줄만 머리글·바닥글·쪽번호 후보로 봅니다.
 const MARGIN_RATIO = 0.09;
 
-// 텍스트 조각을 y 로 묶어 줄을 만들고, 줄 안에서는 x 순으로 잇습니다. 조각 사이가 벌어져 있으면 공백을 넣습니다.
-function buildLines(items, pageHeight) {
-  const pieces = items
-    .filter((it) => it.str && it.str.trim())
-    .map((it) => {
-      const h = Math.abs(it.transform[3]) || Math.abs(it.height) || 10;
-      return { s: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h };
-    });
-  pieces.sort((a, b) => b.y - a.y || a.x - b.x);
+// 2단 편집 판정: 쪽 가운데 부근(너비의 35~65%)에 위에서 아래까지 글자가 거의 지나가지 않는 세로 빈 띠가 있고,
+// 그 양쪽에 각각 글자 줄이 쪽 높이의 절반 넘게 이어지면 2단으로 봅니다. 반환: 단 경계 x(없으면 null)
+function findGutter(pieces, pageWidth) {
+  if (pieces.length < 40 || !pageWidth) return null;
+  const ys = pieces.map((p) => p.y);
+  const height = Math.max(...ys) - Math.min(...ys);
+  if (height <= 0) return null;
+  let best = null;
+  for (let x = pageWidth * 0.35; x <= pageWidth * 0.65; x += 2) {
+    const crossing = pieces.filter((p) => p.x < x - 1 && p.x + p.w > x + 1).length;
+    if (!best || crossing < best.crossing) best = { x, crossing };
+  }
+  if (!best || best.crossing > Math.max(2, pieces.length * 0.03)) return null;
+  const left = pieces.filter((p) => p.x + p.w <= best.x + 1);
+  const right = pieces.filter((p) => p.x >= best.x - 1);
+  const spread = (list) => (list.length ? Math.max(...list.map((p) => p.y)) - Math.min(...list.map((p) => p.y)) : 0);
+  if (left.length < pieces.length * 0.2 || right.length < pieces.length * 0.2) return null;
+  if (spread(left) < height * 0.5 || spread(right) < height * 0.5) return null;
+  // 목차(오른쪽 끝에 쪽번호만)나 표(오른쪽에 숫자 열만)와 구별합니다: 양쪽 단 모두 글자가 30% 이상이고,
+  // 오른쪽 단의 줄은 단 경계 바로 옆(쪽 너비의 12% 안)에서 시작해야 합니다.
+  const chars = (list) => list.reduce((n, p) => n + p.s.replace(/\s/g, '').length, 0);
+  const total = chars(pieces);
+  if (chars(left) < total * 0.3 || chars(right) < total * 0.3) return null;
+  const starts = right.map((p) => p.x).sort((a, b) => a - b);
+  if (starts[Math.floor(starts.length / 2)] - best.x > pageWidth * 0.12) return null;
+  return best.x;
+}
+
+function piecesToLines(pieces, pageHeight) {
+  const sorted = [...pieces].sort((a, b) => b.y - a.y || a.x - b.x);
   const rows = [];
-  for (const p of pieces) {
+  for (const p of sorted) {
     const row = rows.find((r) => Math.abs(r.y - p.y) <= LINE_TOLERANCE);
     if (row) row.pieces.push(p);
     else rows.push({ y: p.y, pieces: [p] });
@@ -40,6 +61,36 @@ function buildLines(items, pageHeight) {
     // 좌표는 PDF 좌표계(왼쪽 아래 원점)를 왼쪽 위 원점으로 바꿔 둡니다.
     return { t: t.replace(/\s+/g, ' ').trim(), x: round(x0), y: round(pageHeight - r.y - h), w: round(x1 - x0), h: round(h) };
   }).filter((l) => l.t);
+}
+
+// 텍스트 조각을 y 로 묶어 줄을 만들고, 줄 안에서는 x 순으로 잇습니다. 조각 사이가 벌어져 있으면 공백을 넣습니다.
+// 2단 편집 쪽은 왼쪽 단을 끝까지 읽은 뒤 오른쪽 단을 읽습니다. 단 경계를 가로지르는 줄(가운데 제목 등)은
+// 그 줄보다 아래에 있는 양쪽 단보다 먼저 읽습니다.
+function buildLines(items, pageHeight, pageWidth) {
+  const pieces = items
+    .filter((it) => it.str && it.str.trim())
+    .map((it) => {
+      const h = Math.abs(it.transform[3]) || Math.abs(it.height) || 10;
+      return { s: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h };
+    });
+  const gutter = findGutter(pieces, pageWidth);
+  if (gutter == null) return piecesToLines(pieces, pageHeight);
+  const span = pieces.filter((p) => p.x < gutter - 1 && p.x + p.w > gutter + 1);
+  const left = pieces.filter((p) => !span.includes(p) && p.x + p.w / 2 < gutter);
+  const right = pieces.filter((p) => !span.includes(p) && p.x + p.w / 2 >= gutter);
+  // 가로지르는 줄을 기준으로 쪽을 위아래 띠로 나누고, 띠마다 왼쪽 단 → 오른쪽 단 순으로 읽습니다.
+  const spanLines = piecesToLines(span, pageHeight);
+  const cuts = spanLines.map((l) => pageHeight - l.y - l.h); // PDF 좌표 y(위가 큼)
+  const out = [];
+  let top = Infinity;
+  const bands = [...cuts, -Infinity];
+  bands.forEach((cut, i) => {
+    const inBand = (p) => p.y < top && p.y >= cut;
+    out.push(...piecesToLines(left.filter(inBand), pageHeight), ...piecesToLines(right.filter(inBand), pageHeight));
+    if (i < spanLines.length) out.push({ ...spanLines[i], span: true });
+    top = cut;
+  });
+  return Object.assign(out, { columns: 2 });
 }
 
 const round = (n) => Math.round(n * 10) / 10;
@@ -120,7 +171,7 @@ async function extractPages(pdfjs, params, onProgress = () => {}) {
       const page = await doc.getPage(n);
       const { width, height } = page.getViewport({ scale: 1 });
       const { items } = await page.getTextContent();
-      const lines = buildLines(items, height);
+      const lines = buildLines(items, height, width);
       for (const l of lines) l.margin = l.y < height * MARGIN_RATIO || l.y + l.h > height * (1 - MARGIN_RATIO);
       const chars = lines.reduce((s, l) => s + l.t.replace(/\s/g, '').length, 0);
       let scanned = false;
@@ -131,7 +182,7 @@ async function extractPages(pdfjs, params, onProgress = () => {}) {
         blank = !scanned && chars === 0;
       }
       candidates.push(pageNumberCandidates(lines, height));
-      pages.push({ n, printed: null, width: round(width), height: round(height), chars, scanned, blank, lines });
+      pages.push({ n, printed: null, width: round(width), height: round(height), chars, scanned, blank, columns: lines.columns || 1, lines: [...lines] });
       page.cleanup();
       onProgress(n, doc.numPages);
     }
@@ -144,4 +195,4 @@ async function extractPages(pdfjs, params, onProgress = () => {}) {
   return { numPages: pages.length, pages };
 }
 
-module.exports = { extractPages, buildLines, resolvePrintedPages, markNoise, PAGE_NUMBER_LINE };
+module.exports = { extractPages, buildLines, findGutter, resolvePrintedPages, markNoise, PAGE_NUMBER_LINE };

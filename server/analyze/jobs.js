@@ -42,6 +42,8 @@ async function run(id, fileName, emit) {
   });
 
   const { meta, structure, coverages } = analyzeStructure(pages, (done, total, message) => emit({ stage: 'structure', done, total, message }));
+  const previous = store.readCache(id, 'coverages');
+  if (previous) remapReview(id, previous, coverages);
   store.writeCache(id, 'pages', pages);
   store.writeCache(id, 'structure', structure);
   store.writeCache(id, 'coverages', coverages);
@@ -49,4 +51,27 @@ async function run(id, fileName, emit) {
   emit({ stage: 'structure', done: 3, total: 3, message: '분석 결과를 저장했습니다.' });
 }
 
-module.exports = { start, jobs, isCached, STRUCTURE_VERSION };
+// 분석 규칙이 바뀌어 같은 PDF 를 다시 분석하면 담보 ID 가 달라질 수 있습니다.
+// 사용자 수정·선택·검토 기록과 담보별 분석 결과를 "약관 제목 + 자동 담보명"이 같은 새 담보로 옮기고, 짝이 없는 것은 버립니다.
+function remapReview(id, oldCoverages, newCoverages) {
+  const key = (c) => `${c.sectionTitle}|${c.name}`;
+  const newByKey = new Map(newCoverages.map((c) => [key(c), c.id]));
+  const map = new Map(oldCoverages.map((c) => [c.id, newByKey.get(key(c))]));
+  const to = (oldId) => (/^U\d+$/.test(oldId) ? oldId : map.get(oldId));
+  const review = store.readReview(id);
+  if (Object.keys(review).length) {
+    const rekey = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => { const [cid, ...rest] = k.split('|'); const n = to(cid); return n ? [[n, ...rest].join('|'), v] : null; }).filter(Boolean));
+    store.writeReview(id, {
+      ...review,
+      edits: rekey(review.edits), reviewStatus: rekey(review.reviewStatus), fieldEdits: rekey(review.fieldEdits),
+      selected: (review.selected || []).map(to).filter(Boolean),
+    });
+  }
+  for (const a of store.listAnalyses(id)) {
+    const n = to(a.coverageId);
+    store.removeAnalysis(id, a.coverageId);
+    if (n) store.writeAnalysis(id, n, { ...a, coverageId: n });
+  }
+}
+
+module.exports = { start, jobs, isCached, STRUCTURE_VERSION, remapReview };
