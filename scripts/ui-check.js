@@ -1,51 +1,68 @@
-// 브라우저 화면 점검: 샘플 변환 → 행 클릭 → 탭 → 엑셀 다운로드 → (있으면) 정답지 비교.
-// 실행: NODE_PATH=$(npm root -g) node scripts/ui-check.js [스크린샷 폴더]
+// 화면 점검: 서버를 띄우고 샘플 PDF 를 올린 뒤 트리 선택·부분 선택·편집·캐시 재사용을 확인하고 화면을 캡처합니다.
+// 실행: NODE_PATH=$(npm root -g) node scripts/ui-check.js <캡처 저장 폴더>   (Playwright 필요)
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const assert = require('assert/strict');
 const { chromium } = require('playwright');
-const XLSX = require('xlsx');
+
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage-ui-'));
+const app = require('../server/index');
+const outDir = process.argv[2] || os.tmpdir();
 
 (async () => {
-  const out = process.argv[2] || '.';
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const url = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1600, height: 950 }, acceptDownloads: true });
+  const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('file://' + path.resolve(__dirname, '..', 'index.html'));
-  await page.click('#btnSample');
-  await page.click('#btnRun');
-  const rows = await page.locator('tr.rule').count();
-  console.log('룰 행 수:', rows);
-  console.log('요약:', await page.locator('#summary').innerText());
-  const colors = await page.$$eval('tr.rule', (trs) => [...new Set(trs.map((tr) => `${tr.className.match(/cat-\S+/)[0]}=${getComputedStyle(tr.cells[1]).backgroundColor}`))]);
-  console.log('구분 색상:', colors.join(', '));
-  await page.click('tr.rule[data-no="1"]');
-  console.log('행1 상세:', (await page.locator('#detail').innerText()).split('\n').slice(0, 4).join(' | '));
-  await page.screenshot({ path: path.join(out, 'ui-rules.png') });
-  await page.click('.tab[data-view="manual"]');
-  console.log('수기 행 수:', await page.locator('#view-manual tbody tr').count());
-  await page.screenshot({ path: path.join(out, 'ui-manual.png') });
-  await page.click('.tab[data-view="rules"]');
+  try {
+    await page.goto(url);
+    await page.setInputFiles('#file', path.join(__dirname, '..', 'samples', 'sample_policy.pdf'));
+    await page.waitForSelector('#workspace:not([hidden])', { timeout: 60000 });
+    await page.waitForSelector('.warning.strong');
+    assert.match(await page.textContent('.warning.strong'), /OCR 필요/);
 
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#btnExcel')]);
-  const file = path.join(out, 'download.xlsx');
-  await dl.saveAs(file);
-  const book = XLSX.readFile(file);
-  console.log('다운로드 시트:', book.SheetNames.join(', '), '/ 룰테이블 행:', XLSX.utils.sheet_to_json(book.Sheets['룰테이블']).length);
+    // 대분류 "진단" 체크 → 하위 전체 선택
+    const diag = page.locator('.node.cat', { hasText: '진단' }).first();
+    await diag.locator('.node-row input').first().check();
+    const diagCount = await diag.locator('.leaf input').count();
+    assert.equal(await page.locator('.card').count(), diagCount);
 
-  if (await page.locator('#fileAnswer').count()) {
-    await page.setInputFiles('#fileAnswer', path.resolve(__dirname, '..', 'samples', 'answer_key.xlsx'));
-    await page.waitForTimeout(300);
-    console.log('비교 후 요약:', await page.locator('#summary').innerText());
-    if (await page.locator('#view-compare tbody tr').count()) {
-      console.log('비교 행:', await page.locator('#view-compare tbody tr').count());
-      await page.screenshot({ path: path.join(out, 'ui-compare.png') });
-      const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#btnExcel')]);
-      await dl2.saveAs(file);
-      const b2 = XLSX.readFile(file);
-      console.log('비교 후 다운로드 시트:', b2.SheetNames.join(', '), '/ 정답지비교 행:', XLSX.utils.sheet_to_json(b2.Sheets['정답지비교']).length);
-    }
+    // 담보 하나 해제 → 대분류 부분 선택
+    await diag.locator('.leaf input').first().uncheck();
+    assert.equal(await diag.locator('.node-row input').first().evaluate((el) => el.indeterminate), true);
+    assert.equal(await page.locator('.card').count(), diagCount - 1);
+    await page.screenshot({ path: path.join(outDir, 'ui-1-tree.png'), fullPage: false });
+
+    // 편집: "응급실내원보험금"을 치료로 옮기고 이름을 고침
+    const leaf = page.locator('.leaf', { hasText: '응급실내원보험금' });
+    await leaf.locator('[data-edit]').click();
+    await page.fill('#edit-form input[name=name]', '응급실내원보험금(수정)');
+    await page.selectOption('#edit-form select[name=category]', '치료');
+    await page.click('#edit-form button[value=save]');
+    await page.waitForSelector('.node.cat:has-text("치료") .leaf:has-text("응급실내원보험금(수정)")');
+    assert.equal(await page.locator('.node.cat').nth(5).locator('.leaf', { hasText: '응급실내원보험금' }).count(), 0);
+    assert.match(await page.locator('.leaf', { hasText: '응급실내원보험금(수정)' }).locator('.reason').textContent(), /사용자가 치료/);
+
+    // 새로 고침해도 수정·선택이 유지되는지(이 PC에 저장)
+    await page.waitForFunction(() => document.getElementById('save-state').textContent.includes('저장됨'));
+    const id = await page.evaluate(() => document.querySelector('#recent option[value]:not([value=""])').value);
+    await page.reload();
+    await page.selectOption('#recent', id);
+    await page.waitForSelector('.leaf:has-text("응급실내원보험금(수정)")');
+    assert.equal(await page.locator('.card').count(), diagCount - 1);
+
+    // 같은 PDF 재업로드 → 캐시 사용 안내
+    await page.setInputFiles('#file', path.join(__dirname, '..', 'samples', 'sample_policy.pdf'));
+    await page.waitForFunction(() => document.getElementById('progress-msg').textContent.includes('이미 분석한 PDF'));
+    await page.screenshot({ path: path.join(outDir, 'ui-2-cards.png'), fullPage: false });
+    assert.deepEqual(errors, []);
+    console.log(`화면 점검 통과. 캡처: ${outDir}/ui-1-tree.png, ui-2-cards.png`);
+  } finally {
+    await browser.close();
+    server.close();
   }
-  console.log('페이지 오류:', errors.length ? errors : '없음');
-  await browser.close();
-  if (errors.length) process.exit(1);
-})();
+})().catch((e) => { console.error(e); process.exit(1); });

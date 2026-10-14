@@ -1,16 +1,20 @@
 {
-  "name": "ecs-rule-builder",
+  "name": "coverage-analyzer",
   "version": "0.1.0",
   "private": true,
-  "description": "생명보험 약관을 ECS 룰 테이블 행으로 변환하는 웹앱 (더미 데이터 전용)",
-  "scripts": {
-    "build:samples": "node scripts/build-samples.js",
-    "build:vendor": "node scripts/build-cmaps.js && cp node_modules/xlsx/dist/xlsx.full.min.js node_modules/pdfjs-dist/build/pdf.min.js node_modules/pdfjs-dist/build/pdf.worker.min.js vendor/",
-    "build:artifact": "node scripts/build-artifact.js",
-    "test": "node --test test/*.test.js"
+  "description": "보험 약관 PDF에서 담보를 분류하고 ECS 룰 입력 참고 초안을 만드는 로컬 웹앱",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=20.12"
   },
-  "devDependencies": {
-    "pdfjs-dist": "3.11.174",
-    "xlsx": "0.18.5"
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js",
+    "build:sample": "node scripts/build-sample-pdf.js",
+    "check:ui": "node scripts/ui-check.js"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "pdfjs-dist": "4.10.38"
   }
 }

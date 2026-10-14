@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>약관 담보 분석기</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>약관 담보 분석기</h1>
+    <div class="top-actions">
+      <label class="btn primary">약관 PDF 올리기<input id="file" type="file" accept="application/pdf,.pdf" hidden></label>
+      <select id="recent" aria-label="최근 분석한 약관"><option value="">최근 분석한 약관 열기</option></select>
+    </div>
+  </header>
+
+  <section id="progress" class="progress" hidden>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <p id="progress-msg"></p>
+  </section>
+
+  <section id="warnings"></section>
+  <section id="summary" class="summary" hidden></section>
+
+  <main id="workspace" hidden>
+    <aside class="tree-panel">
+      <div class="tree-tools">
+        <input id="search" type="search" placeholder="담보 검색">
+        <div class="row">
+          <button id="select-all" class="btn small">전체 선택</button>
+          <button id="select-none" class="btn small">선택 해제</button>
+          <button id="add-coverage" class="btn small">담보 직접 추가</button>
+        </div>
+        <p class="hint">상위 분류를 체크하면 하위 담보가 모두 선택됩니다. 담보 옆 [편집]으로 이름을 고치거나 다른 분류로 옮길 수 있습니다.</p>
+      </div>
+      <div id="tree" role="tree"></div>
+      <details id="excluded-box" class="excluded" hidden>
+        <summary>목록에서 제외한 담보 <span id="excluded-count"></span></summary>
+        <ul id="excluded-list"></ul>
+      </details>
+    </aside>
+    <section class="cards-panel">
+      <div class="cards-head">
+        <h2>선택한 담보 <span id="selected-count">0</span>건</h2>
+        <span id="save-state" class="muted"></span>
+      </div>
+      <div id="cards"></div>
+    </section>
+  </main>
+
+  <section id="empty" class="empty">
+    <p>약관 PDF를 올리면 목차와 본문을 읽어 담보를 사망·장해·진단·입원·치료·기타로 나눠 보여 줍니다.</p>
+    <p class="muted">올린 PDF와 분석 결과는 이 PC의 data 폴더에만 저장됩니다. 같은 PDF를 다시 올리면 저장된 결과를 바로 엽니다.</p>
+  </section>
+
+  <dialog id="edit-dialog">
+    <form method="dialog" id="edit-form">
+      <h3 id="edit-title">담보 편집</h3>
+      <label>담보명<input name="name" required maxlength="200"></label>
+      <label>대분류<select name="category"></select></label>
+      <label>중분류<input name="group" list="group-list" maxlength="200"></label>
+      <datalist id="group-list"></datalist>
+      <label class="section-field">정의 약관<select name="sectionId"></select></label>
+      <label class="check"><input type="checkbox" name="excluded"> 담보가 아니므로 목록에서 제외</label>
+      <p id="edit-auto" class="muted"></p>
+      <div class="row end">
+        <button type="button" id="edit-reset" class="btn small">자동 분류로 되돌리기</button>
+        <button value="cancel" class="btn small">취소</button>
+        <button value="save" class="btn small primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="tree.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

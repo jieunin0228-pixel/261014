@@ -1,0 +1,367 @@
+{
+  "totalPages": 246,
+  "tocPages": [
+    2,
+    3,
+    4
+  ],
+  "bodyStartPdfPage": 5,
+  "scannedPdfPage": 246,
+  "sections": [
+    {
+      "title": "무배당 더미건강종신보험 보통약관",
+      "kind": "보통약관",
+      "pdfPage": 5,
+      "printed": 1
+    },
+    {
+      "title": "재해사망특약",
+      "kind": "특별약관",
+      "pdfPage": 19,
+      "printed": 15
+    },
+    {
+      "title": "재해장해특약",
+      "kind": "특별약관",
+      "pdfPage": 26,
+      "printed": 22
+    },
+    {
+      "title": "무배당 암진단특약(갱신형)",
+      "kind": "특별약관",
+      "pdfPage": 34,
+      "printed": 30
+    },
+    {
+      "title": "뇌출혈진단특약",
+      "kind": "특별약관",
+      "pdfPage": 42,
+      "printed": 38
+    },
+    {
+      "title": "급성심근경색증진단특약",
+      "kind": "특별약관",
+      "pdfPage": 50,
+      "printed": 46
+    },
+    {
+      "title": "질병수술특약",
+      "kind": "특별약관",
+      "pdfPage": 58,
+      "printed": 54
+    },
+    {
+      "title": "암수술특약",
+      "kind": "특별약관",
+      "pdfPage": 66,
+      "printed": 62
+    },
+    {
+      "title": "질병입원특약",
+      "kind": "특별약관",
+      "pdfPage": 75,
+      "printed": 71
+    },
+    {
+      "title": "재해입원특약",
+      "kind": "특별약관",
+      "pdfPage": 84,
+      "printed": 80
+    },
+    {
+      "title": "암직접치료입원특약",
+      "kind": "특별약관",
+      "pdfPage": 93,
+      "printed": 89
+    },
+    {
+      "title": "항암방사선약물치료특약",
+      "kind": "특별약관",
+      "pdfPage": 100,
+      "printed": 96
+    },
+    {
+      "title": "장기요양간병특약",
+      "kind": "특별약관",
+      "pdfPage": 107,
+      "printed": 103
+    },
+    {
+      "title": "생활자금지급특약",
+      "kind": "특별약관",
+      "pdfPage": 114,
+      "printed": 110
+    },
+    {
+      "title": "응급실내원특약",
+      "kind": "특별약관",
+      "pdfPage": 122,
+      "printed": 118
+    },
+    {
+      "title": "골절진단특약",
+      "kind": "특별약관",
+      "pdfPage": 130,
+      "printed": 126
+    },
+    {
+      "title": "화상진단특약",
+      "kind": "특별약관",
+      "pdfPage": 138,
+      "printed": 134
+    },
+    {
+      "title": "중증치매진단특약",
+      "kind": "특별약관",
+      "pdfPage": 146,
+      "printed": 142
+    },
+    {
+      "title": "표적항암약물허가치료특약",
+      "kind": "특별약관",
+      "pdfPage": 155,
+      "printed": 151
+    },
+    {
+      "title": "중대한수술특약",
+      "kind": "특별약관",
+      "pdfPage": 164,
+      "printed": 160
+    },
+    {
+      "title": "질병통원특약",
+      "kind": "특별약관",
+      "pdfPage": 173,
+      "printed": 169
+    },
+    {
+      "title": "깁스치료특약",
+      "kind": "특별약관",
+      "pdfPage": 180,
+      "printed": 176
+    },
+    {
+      "title": "상해입원일당특약",
+      "kind": "특별약관",
+      "pdfPage": 187,
+      "printed": 183
+    },
+    {
+      "title": "만기축하특약",
+      "kind": "특별약관",
+      "pdfPage": 194,
+      "printed": 190
+    },
+    {
+      "title": "질병사망특약",
+      "kind": "특별약관",
+      "pdfPage": 202,
+      "printed": 198
+    },
+    {
+      "title": "유족연금특약",
+      "kind": "특별약관",
+      "pdfPage": 210,
+      "printed": 206
+    },
+    {
+      "title": "뇌혈관질환진단특약",
+      "kind": "특별약관",
+      "pdfPage": 218,
+      "printed": 214
+    },
+    {
+      "title": "허혈성심장질환진단특약",
+      "kind": "특별약관",
+      "pdfPage": 226,
+      "printed": 222
+    },
+    {
+      "title": "보험료납입면제특약",
+      "kind": "특별약관",
+      "pdfPage": 235,
+      "printed": 231
+    },
+    {
+      "title": "[별표1] 장해분류표",
+      "kind": "별표",
+      "pdfPage": 236,
+      "printed": 232
+    },
+    {
+      "title": "[별표2] 수술분류표",
+      "kind": "별표",
+      "pdfPage": 244,
+      "printed": 240
+    },
+    {
+      "title": "[별표3] 악성신생물 분류표",
+      "kind": "별표",
+      "pdfPage": 245,
+      "printed": 241
+    }
+  ],
+  "coverages": [
+    {
+      "section": "무배당 더미건강종신보험 보통약관",
+      "name": "사망보험금",
+      "category": "사망"
+    },
+    {
+      "section": "무배당 더미건강종신보험 보통약관",
+      "name": "고도장해보험금",
+      "category": "장해"
+    },
+    {
+      "section": "재해사망특약",
+      "name": "재해사망보험금",
+      "category": "사망"
+    },
+    {
+      "section": "재해장해특약",
+      "name": "재해장해급여금",
+      "category": "장해"
+    },
+    {
+      "section": "재해장해특약",
+      "name": "재해고도장해보험금",
+      "category": "장해"
+    },
+    {
+      "section": "무배당 암진단특약(갱신형)",
+      "name": "암진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "무배당 암진단특약(갱신형)",
+      "name": "소액암진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "뇌출혈진단특약",
+      "name": "뇌출혈진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "급성심근경색증진단특약",
+      "name": "급성심근경색증진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "질병수술특약",
+      "name": "질병수술보험금",
+      "category": "치료"
+    },
+    {
+      "section": "암수술특약",
+      "name": "암수술보험금",
+      "category": "치료"
+    },
+    {
+      "section": "질병입원특약",
+      "name": "질병입원급여금",
+      "category": "입원"
+    },
+    {
+      "section": "재해입원특약",
+      "name": "재해입원급여금",
+      "category": "입원"
+    },
+    {
+      "section": "암직접치료입원특약",
+      "name": "암직접치료입원급여금",
+      "category": "입원"
+    },
+    {
+      "section": "항암방사선약물치료특약",
+      "name": "항암방사선약물치료보험금",
+      "category": "치료"
+    },
+    {
+      "section": "장기요양간병특약",
+      "name": "장기요양간병자금",
+      "category": "치료"
+    },
+    {
+      "section": "생활자금지급특약",
+      "name": "생활자금",
+      "category": "기타"
+    },
+    {
+      "section": "응급실내원특약",
+      "name": "응급실내원보험금",
+      "category": "기타"
+    },
+    {
+      "section": "골절진단특약",
+      "name": "골절진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "화상진단특약",
+      "name": "화상진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "중증치매진단특약",
+      "name": "중증치매진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "표적항암약물허가치료특약",
+      "name": "표적항암약물허가치료보험금",
+      "category": "치료"
+    },
+    {
+      "section": "중대한수술특약",
+      "name": "중대한수술보험금",
+      "category": "치료"
+    },
+    {
+      "section": "질병통원특약",
+      "name": "질병통원급여금",
+      "category": "치료"
+    },
+    {
+      "section": "깁스치료특약",
+      "name": "깁스치료보험금",
+      "category": "치료"
+    },
+    {
+      "section": "상해입원일당특약",
+      "name": "상해입원일당",
+      "category": "입원"
+    },
+    {
+      "section": "만기축하특약",
+      "name": "만기축하금",
+      "category": "기타"
+    },
+    {
+      "section": "질병사망특약",
+      "name": "질병사망보험금",
+      "category": "사망"
+    },
+    {
+      "section": "유족연금특약",
+      "name": "유족연금",
+      "category": "사망"
+    },
+    {
+      "section": "뇌혈관질환진단특약",
+      "name": "뇌혈관질환진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "허혈성심장질환진단특약",
+      "name": "허혈성심장질환진단보험금",
+      "category": "진단"
+    },
+    {
+      "section": "보험료납입면제특약",
+      "name": "보험료납입면제특약",
+      "category": "기타",
+      "fromTitle": true
+    }
+  ]
+}

@@ -1,2 +1,6 @@
 node_modules/
 build/
+# 약관·분석 결과·검토 기록은 이 PC에만 둡니다.
+data/
+# API 키
+.env
