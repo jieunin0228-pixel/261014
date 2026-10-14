@@ -48,6 +48,32 @@
         <h2>선택한 담보 <span id="selected-count">0</span>건</h2>
         <span id="save-state" class="muted"></span>
       </div>
+      <div id="analysis-bar" class="analysis-bar" hidden>
+        <div class="row">
+          <button id="run-analysis" class="btn primary">선택 담보 분석</button>
+          <button id="stop-analysis" class="btn" hidden>중지</button>
+          <span id="analysis-progress" class="muted" role="status"></span>
+        </div>
+        <div id="ai-state"></div>
+      </div>
+      <details id="codemaster-box" class="panel-box" hidden>
+        <summary>코드마스터 · <span id="cm-label"></span></summary>
+        <div id="cm-detail"></div>
+        <div class="row">
+          <a id="cm-download" class="btn small" href="#">지금 코드마스터 엑셀로 받기</a>
+          <label class="btn small">코드마스터 올리기<input id="cm-file" type="file" accept=".xlsx" hidden></label>
+          <button id="cm-reset" class="btn small" hidden>임시 코드마스터로 되돌리기</button>
+          <span id="cm-status" class="muted" role="status"></span>
+        </div>
+      </details>
+      <details id="product-box" class="panel-box" hidden>
+        <summary>상품 정보 (사용자 입력 · ECS에서도 수정 불가 항목이므로 앱이 추정하지 않습니다)</summary>
+        <div class="product-grid">
+          <label>상품코드<input id="p-productCode" maxlength="40"></label>
+          <label>상품명<input id="p-productName" maxlength="200"></label>
+          <label>판매개시일자<input id="p-saleDate" maxlength="20" placeholder="예: 2026-11-01"></label>
+        </div>
+      </details>
       <div id="cards"></div>
     </section>
   </main>
@@ -77,6 +103,7 @@
   </dialog>
 
   <script src="tree.js"></script>
+  <script src="analysis.js"></script>
   <script src="api-server.js"></script>
   <script src="app.js"></script>
 </body>

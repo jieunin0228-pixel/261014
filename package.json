@@ -11,10 +11,17 @@
     "start": "node server/index.js",
     "test": "node --test test/*.test.js",
     "build:sample": "node scripts/build-sample-pdf.js",
-    "check:ui": "node scripts/ui-check.js"
+    "check:ui": "node scripts/ui-check.js",
+    "build:codemaster": "node scripts/build-codemaster.js",
+    "check:ui2": "node scripts/ui-check-stage2.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
+    "exceljs": "4.4.0",
     "express": "5.2.1",
     "pdfjs-dist": "4.10.38"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }

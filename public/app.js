@@ -11,6 +11,11 @@
   let selected = new Set();
   let collapsed = new Set();
   let editing = null;      // 편집 중인 담보(새로 추가하면 null)
+  let config = null;       // { ai, codemaster, flagText } (2단계, 로컬 실행판만)
+  let results = {};        // 담보 id → 분석 결과(view)
+  let jobStates = {};      // 담보 id → waiting | running | done | error | stopped
+  let running = false;
+  let stopWatch = null;
 
   // ───────────── 업로드와 진행률 ─────────────
   $('file').addEventListener('change', (e) => {
@@ -59,14 +64,20 @@
 
   async function openDoc(id) {
     try { doc = await api.open(id); } catch (err) { showProgress(0, err.message); return; }
-    review = { edits: doc.review.edits || {}, added: doc.review.added || [], selected: doc.review.selected || [] };
+    review = {
+      edits: doc.review.edits || {}, added: doc.review.added || [], selected: doc.review.selected || [],
+      reviewStatus: doc.review.reviewStatus || {}, fieldEdits: doc.review.fieldEdits || {}, product: doc.review.product || {},
+    };
     selected = new Set(review.selected);
+    results = {}; jobStates = {};
+    renderProduct();
     $('empty').hidden = true;
     $('workspace').hidden = false;
     setTimeout(() => { $('progress').hidden = true; }, 800);
     renderMeta();
     renderAll();
     loadRecent();
+    loadResults();
   }
 
   // ───────────── 문서 요약·경고 ─────────────
@@ -261,36 +272,188 @@
     clearTimeout(timer);
     $('save-state').textContent = '저장 중…';
     let ok = false;
-    try { ok = await api.save(doc.meta.id, { edits: review.edits, added: review.added, selected: [...selected] }); } catch { ok = false; }
+    try {
+      ok = await api.save(doc.meta.id, {
+        edits: review.edits, added: review.added, selected: [...selected],
+        reviewStatus: review.reviewStatus, fieldEdits: review.fieldEdits, product: review.product,
+      });
+    } catch { ok = false; }
     $('save-state').textContent = ok ? api.savedLabel : '저장하지 못했습니다. 이 창을 닫으면 수정 내용이 사라집니다.';
   }
 
   // ───────────── 결과 카드 ─────────────
+  const STATE_TEXT = { waiting: '분석 대기', running: '분석 중', done: '분석 완료', error: '분석 실패', stopped: '중지됨' };
+
+  function cardStatus(c) {
+    if (!api.supportsAnalysis) return '';
+    const st = jobStates[c.id];
+    const r = results[c.id];
+    let label = '미분석', cls = '';
+    if (st === 'waiting' || st === 'running') { label = STATE_TEXT[st]; cls = 'busy'; }
+    else if (r && r.error) { label = '분석 실패'; cls = 'bad'; }
+    else if (r && r.stale && r.stale.length) { label = '다시 분석 필요'; cls = 'warn'; }
+    else if (r) { label = `분석 완료 · 검토 ${r.progress.reviewed}/${r.progress.total}`; cls = r.progress.reviewed === r.progress.total ? 'good' : ''; }
+    const btn = running ? '' : `<button class="btn tiny" data-analyze="${esc(c.id)}" data-force="${r ? '1' : ''}">${r ? '다시 분석' : '분석'}</button>`;
+    return `<span class="status ${cls}">${esc(label)}</span>${btn}`;
+  }
+
+  function cardBody(c) {
+    if (!api.supportsAnalysis) {
+      return `<div class="areas">
+        <div class="area"><h4>A·B·D 영역</h4><p class="muted">담보 요약과 ECS 룰 입력 초안은 로컬 실행판에서 Claude API로 만듭니다.</p></div>
+        <div class="area"><h4>C. 근거 페이지</h4><p class="muted">3단계에서 PDF 뷰어와 연결됩니다.</p></div>
+      </div>`;
+    }
+    const r = results[c.id];
+    if (r && r.A) return window.AnalysisView.render(r, (config && config.flagText) || {});
+    if (r && r.error) return `<div class="note-box error">분석하지 못했습니다: ${esc(r.error)}</div>`;
+    return `<p class="muted pending-note">아직 분석하지 않았습니다. 위의 [선택 담보 분석] 또는 이 카드의 [분석]을 누르면 A(보장 세부조건)·B(전산화 시 주의사항)·C(근거 페이지)·D(ECS 룰 입력 초안)가 채워집니다.</p>`;
+  }
+
   function renderCards() {
     const order = T.build(doc.categories, coverages()).flatMap((cat) => cat.groups.flatMap((g) => g.items));
     const list = order.filter((c) => selected.has(c.id));
     $('selected-count').textContent = list.length;
+    renderAnalysisBar(list);
     if (!list.length) { $('cards').innerHTML = '<p class="muted">왼쪽 트리에서 담보를 선택하면 담보마다 결과 카드가 만들어집니다.</p>'; return; }
     $('cards').innerHTML = list.map((c) => {
       const ev = c.evidence;
-      return `<article class="card">
-        <header><h3>${esc(c.name)}</h3><span class="chip">${esc(c.category)}</span><span class="chip light">${esc(c.group)}</span></header>
+      return `<article class="card" data-card="${esc(c.id)}">
+        <header><h3>${esc(c.name)}</h3><span class="chip">${esc(c.category)}</span><span class="chip light">${esc(c.group)}</span><span class="card-status">${cardStatus(c)}</span></header>
+        <details class="basis"><summary>자동 분류 근거 · ${ev ? esc(`${ev.article || '약관 제목 줄'} · ${pageLabel(ev)}`) : '직접 추가한 담보'}</summary>
         <table class="kv">
           <tr><th>분류 근거</th><td>${esc(c.reason)}</td></tr>
-          <tr><th>정의 약관</th><td>${esc(c.sectionTitle || '사용자 지정 없음')}</td></tr>
-          ${ev ? `<tr><th>근거 조문</th><td>${esc(ev.article || '약관 제목 줄')}</td></tr>
-          <tr><th>근거 위치</th><td>${pageLabel(ev)}</td></tr>
-          <tr><th>원문</th><td class="quote">“${esc(ev.quote)}”</td></tr>` : '<tr><th>근거</th><td>직접 추가한 담보이므로 자동 근거가 없습니다.</td></tr>'}
-        </table>
-        <div class="areas">
-          <div class="area"><h4>A. 보장 세부조건</h4><p class="muted">2단계에서 채워집니다.</p></div>
-          <div class="area"><h4>B. 전산화 시 주의사항</h4><p class="muted">2단계에서 채워집니다.</p></div>
-          <div class="area"><h4>C. 근거 페이지</h4><p class="muted">3단계에서 PDF 뷰어와 연결됩니다.</p></div>
-          <div class="area"><h4>D. ECS 룰 입력 초안</h4><p class="muted">2단계에서 채워집니다.</p></div>
-        </div>
+          <tr><th>정의 약관</th><td>${esc(c.sectionTitle || '지정 없음')}</td></tr>
+          ${ev ? `<tr><th>원문</th><td class="quote">“${esc(ev.quote)}”</td></tr>` : ''}
+        </table></details>
+        <div class="card-body">${cardBody(c)}</div>
       </article>`;
     }).join('');
   }
+
+  // ───────────── 2단계: 분석 실행·코드마스터·상품 정보 ─────────────
+  function renderAnalysisBar(list) {
+    if (!api.supportsAnalysis) { $('analysis-bar').hidden = true; return; }
+    $('analysis-bar').hidden = false;
+    const ai = config && config.ai;
+    const todo = list.filter((c) => !results[c.id] || results[c.id].error || (results[c.id].stale && results[c.id].stale.length));
+    $('run-analysis').textContent = todo.length ? `선택 담보 분석 (${todo.length}건)` : '선택 담보 모두 분석됨';
+    $('run-analysis').disabled = running || !todo.length || !(ai && ai.ready);
+    $('stop-analysis').hidden = !running;
+    $('ai-state').innerHTML = !ai ? '' : ai.ready
+      ? `<span class="muted">Claude 분석 사용 가능${ai.mode === 'claude' ? ` · 모델 ${esc(ai.model)}` : ` · ${ai.mode === 'fake' ? '시험용 응답 모드' : '시험 모드'}`}. 분석 1건마다 Claude API를 한 번 호출합니다(이미 분석한 담보는 다시 부르지 않음).</span>`
+      : `<span class="warn-text">${esc(ai.message)}</span>`;
+  }
+
+  async function loadConfig() {
+    if (!api.supportsAnalysis) return;
+    try { config = await api.config(); } catch (err) { config = null; }
+    renderMaster();
+  }
+
+  async function loadResults() {
+    if (!api.supportsAnalysis || !doc) return;
+    try {
+      const res = await api.results(doc.meta.id);
+      results = res.results || {};
+      jobStates = res.states || {};
+      if (res.running && !running) watch();
+    } catch { /* 결과 없음 */ }
+    renderCards();
+  }
+
+  function watch() {
+    running = true;
+    if (stopWatch) stopWatch();
+    stopWatch = api.watchAnalysis(doc.meta.id, (ev) => {
+      if (ev.states) jobStates = ev.states;
+      if (ev.message) $('analysis-progress').textContent = ev.total ? `${ev.message} (${ev.done}/${ev.total})` : ev.message;
+      if (ev.stage === 'coverage' && jobStates[ev.coverageId] !== 'running') { loadResults(); return; }
+      if (ev.stage === 'done' || ev.stage === 'idle') { running = false; stopWatch = null; loadResults(); return; }
+      renderCards();
+    });
+  }
+
+  async function runAnalysis(ids, force) {
+    if (!ids.length) return;
+    try {
+      const res = await api.runAnalysis(doc.meta.id, ids, force);
+      $('analysis-progress').textContent = res.total ? `${res.total}건 분석을 시작했습니다.${res.skipped ? ` (이미 분석한 ${res.skipped}건은 건너뜀)` : ''}` : '이미 모두 분석되어 있습니다.';
+      watch();
+    } catch (err) {
+      $('analysis-progress').textContent = err.message;
+    }
+  }
+
+  $('run-analysis').addEventListener('click', () => {
+    const order = T.build(doc.categories, coverages()).flatMap((cat) => cat.groups.flatMap((g) => g.items));
+    runAnalysis(order.filter((c) => selected.has(c.id)).map((c) => c.id), false);
+  });
+  $('stop-analysis').addEventListener('click', () => api.stopAnalysis(doc.meta.id).catch(() => {}));
+
+  $('cards').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-analyze]');
+    if (b) runAnalysis([b.dataset.analyze], !!b.dataset.force);
+  });
+  $('cards').addEventListener('change', (e) => {
+    const box = e.target.closest('input[data-review]');
+    if (box) {
+      if (box.checked) review.reviewStatus[box.dataset.review] = 'done'; else delete review.reviewStatus[box.dataset.review];
+      saveSoon();
+      return;
+    }
+    const inp = e.target.closest('input[data-edit]');
+    if (inp) {
+      const k = inp.dataset.edit;
+      const card = inp.closest('tr');
+      const code = card.querySelector('[data-part="code"]');
+      const name = card.querySelector('[data-part="name"]');
+      review.fieldEdits[k] = { ...(code ? { code: code.value.trim() } : {}), name: name.value.trim() };
+      saveSoon();
+    }
+  });
+  // 검토 상태와 직접 수정은 저장 뒤 결과를 다시 받아 진행률·표시를 맞춥니다.
+  $('cards').addEventListener('change', () => setTimeout(() => { if (!running) loadResults(); }, 900));
+
+  function renderProduct() {
+    if (!api.supportsAnalysis) { $('product-box').hidden = true; return; }
+    $('product-box').hidden = false;
+    for (const k of ['productCode', 'productName', 'saleDate']) $(`p-${k}`).value = (review.product || {})[k] || '';
+  }
+  for (const k of ['productCode', 'productName', 'saleDate']) {
+    $(`p-${k}`).addEventListener('change', (e) => { review.product = { ...review.product, [k]: e.target.value.trim() }; saveSoon(); setTimeout(loadResults, 900); });
+  }
+
+  function renderMaster() {
+    if (!api.supportsAnalysis || !config) { $('codemaster-box').hidden = true; return; }
+    const m = config.codemaster;
+    $('codemaster-box').hidden = false;
+    $('cm-label').innerHTML = m.provisional
+      ? '<span class="pill warn">임시 코드마스터 사용 중</span> 실제 ECS 코드가 아닙니다'
+      : `<span class="pill accent">업로드한 코드마스터</span> ${esc(m.source)}${m.provisionalCount ? ` · 임시(TMP-) 코드 ${m.provisionalCount}개 남음` : ''}`;
+    $('cm-detail').innerHTML = `<p class="muted">${m.provisional
+      ? '실제 코드마스터를 받기 전까지 앱이 만든 임시 코드표를 씁니다. "화면캡처" 코드는 이전에 받은 ECS 화면 캡처에서 확인한 값이고, TMP-로 시작하는 코드는 지어낸 값입니다. 임시 코드를 쓴 칸에는 "임시 코드" 표시가 붙습니다.'
+      : '이 코드마스터에 있는 코드만 제안합니다. 없는 코드는 비우고 "코드 확인 필요"로 표시합니다.'}</p>
+      <p class="muted">${Object.entries(m.counts).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</p>
+      ${(m.warnings || []).length ? `<ul class="warn-text">${m.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}`;
+    $('cm-download').href = api.masterDownloadUrl;
+    $('cm-reset').hidden = m.provisional;
+  }
+  $('cm-file').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    $('cm-status').textContent = '코드마스터를 읽는 중입니다.';
+    try { await api.uploadMaster(f); $('cm-status').textContent = '코드마스터를 바꿨습니다. 이미 분석한 담보는 새 코드마스터 기준으로 코드를 다시 검사했습니다.'; }
+    catch (err) { $('cm-status').textContent = err.message; }
+    await loadConfig(); loadResults();
+  });
+  $('cm-reset').addEventListener('click', async () => {
+    try { await api.resetMaster(); $('cm-status').textContent = '임시 코드마스터로 되돌렸습니다.'; } catch (err) { $('cm-status').textContent = err.message; }
+    await loadConfig(); loadResults();
+  });
+
+  loadConfig();
 
   $('storage-note').textContent = api.storageNote;
   // 처음 연 화면이 비어 있지 않도록, 저장된 약관이 없으면 시험용 가상 약관을 자동으로 엽니다.

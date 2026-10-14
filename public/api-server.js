@@ -45,8 +45,32 @@
     return res.ok;
   }
 
+  // ───────────── 2단계: 담보 분석·코드마스터 ─────────────
+  async function json(res) {
+    let body = {};
+    try { body = await res.json(); } catch { /* 빈 응답 */ }
+    if (!res.ok) throw new Error(body.error || `요청이 실패했습니다(${res.status}).`);
+    return body;
+  }
+  const config = async () => json(await fetch('/api/config'));
+  const results = async (id) => json(await fetch(`/api/docs/${id}/analysis`));
+  const runAnalysis = async (id, coverageIds, force) => json(await fetch(`/api/docs/${id}/analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverageIds, force }) }));
+  const stopAnalysis = async (id) => json(await fetch(`/api/docs/${id}/analysis/stop`, { method: 'POST' }));
+  // 진행 상황을 받다가 끝나면 닫습니다. onEvent(ev)
+  function watchAnalysis(id, onEvent) {
+    const es = new EventSource(`/api/docs/${id}/analysis/events`);
+    es.onmessage = (m) => { const ev = JSON.parse(m.data); onEvent(ev); if (ev.stage === 'done' || ev.stage === 'idle') es.close(); };
+    es.onerror = () => { es.close(); onEvent({ stage: 'done', message: '진행 상황 연결이 끊겼습니다. 결과를 다시 불러옵니다.' }); };
+    return () => es.close();
+  }
+  async function uploadMaster(file) {
+    return json(await fetch('/api/codemaster', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file }));
+  }
+  const resetMaster = async () => json(await fetch('/api/codemaster', { method: 'DELETE' }));
+
   window.CoverageApi = {
     analyze, list, open, save,
+    supportsAnalysis: true, config, results, runAnalysis, stopAnalysis, watchAnalysis, uploadMaster, resetMaster, masterDownloadUrl: '/api/codemaster/download',
     sampleUrl: 'samples/sample_policy.pdf',
     storageNote: '올린 PDF와 분석 결과는 이 PC의 data 폴더에만 저장됩니다. 같은 PDF를 다시 올리면 저장된 결과를 바로 엽니다.',
     savedLabel: '이 PC에 저장됨',

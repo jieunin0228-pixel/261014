@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
-const dirs = { files: path.join(DATA_DIR, 'files'), cache: path.join(DATA_DIR, 'cache'), reviews: path.join(DATA_DIR, 'reviews'), tmp: path.join(DATA_DIR, 'tmp') };
+const dirs = { files: path.join(DATA_DIR, 'files'), cache: path.join(DATA_DIR, 'cache'), reviews: path.join(DATA_DIR, 'reviews'), codemaster: path.join(DATA_DIR, 'codemaster'), tmp: path.join(DATA_DIR, 'tmp') };
 for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
 
 const ID = /^[a-f0-9]{64}$/;
@@ -35,6 +35,23 @@ const writeCache = (id, name, value) => writeJson(cachePath(id, name), value);
 const readReview = (id) => readJson(path.join(dirs.reviews, `${checkId(id)}.json`), {});
 const writeReview = (id, value) => writeJson(path.join(dirs.reviews, `${checkId(id)}.json`), { ...value, savedAt: new Date().toISOString() });
 
+// 담보별 분석 결과: data/cache/<해시>/analysis/<담보ID>.json
+const safeKey = (k) => String(k).replace(/[^A-Za-z0-9_-]/g, '_');
+const analysisPath = (id, coverageId) => path.join(cacheDir(id), 'analysis', `${safeKey(coverageId)}.json`);
+const readAnalysis = (id, coverageId) => readJson(analysisPath(id, coverageId));
+const writeAnalysis = (id, coverageId, value) => writeJson(analysisPath(id, coverageId), value);
+function listAnalyses(id) {
+  const dir = path.join(cacheDir(id), 'analysis');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => readJson(path.join(dir, f))).filter(Boolean);
+}
+
+// 코드마스터: 올린 것이 있으면 그것, 없으면 임시 코드마스터
+const masterFile = path.join(dirs.codemaster, 'current.json');
+const readMaster = () => readJson(masterFile);
+const writeMaster = (m) => writeJson(masterFile, m);
+const clearMaster = () => fs.rmSync(masterFile, { force: true });
+
 function listDocs() {
   return fs.readdirSync(dirs.cache)
     .filter((id) => ID.test(id))
@@ -43,4 +60,4 @@ function listDocs() {
     .sort((a, b) => String(b.openedAt || b.createdAt).localeCompare(String(a.openedAt || a.createdAt)));
 }
 
-module.exports = { DATA_DIR, dirs, checkId, pdfPath, cacheDir, readCache, writeCache, readReview, writeReview, listDocs };
+module.exports = { DATA_DIR, dirs, checkId, pdfPath, cacheDir, readCache, writeCache, readReview, writeReview, listDocs, readAnalysis, writeAnalysis, listAnalyses, readMaster, writeMaster, clearMaster };

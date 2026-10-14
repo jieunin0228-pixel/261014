@@ -98,3 +98,64 @@ dialog label.check { display: flex; gap: 6px; align-items: center; }
   .areas { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { #bar-fill { transition: none; } }
+
+/* ───── 2단계: 분석 막대·코드마스터·결과 영역 ───── */
+.analysis-bar, .panel-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--bg); }
+.analysis-bar .row { margin-top: 0; }
+.panel-box summary { cursor: pointer; }
+.panel-box[open] summary { margin-bottom: 6px; }
+.product-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.product-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.product-grid input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.warn-text { color: var(--ink); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 4px 8px; display: inline-block; }
+ul.warn-text { display: block; padding-left: 24px; }
+.pill { display: inline-block; font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 10px; background: var(--line-soft); color: var(--muted); white-space: nowrap; }
+.pill.warn { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn-line); }
+.pill.accent { background: var(--accent-soft); color: var(--accent); }
+.card-status { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.status { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.status.busy { border-color: var(--accent); color: var(--accent); }
+.status.good { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.status.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--ink); }
+.status.bad { background: var(--alert-bg); border-color: var(--alert-line); color: var(--ink); }
+.basis { margin-top: 6px; font-size: 13px; }
+.basis summary { cursor: pointer; color: var(--muted); }
+.card-body { margin-top: 8px; }
+.pending-note { margin: 4px 0 0; }
+.note-box { padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); border: 1px solid var(--warn-line); margin-bottom: 6px; font-size: 13px; }
+.note-box.error { background: var(--alert-bg); border-color: var(--alert-line); }
+.result-meta { font-size: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+details.area { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin-top: 8px; }
+details.area > summary { cursor: pointer; font-weight: 600; }
+.grid { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+.grid th, .grid td { border-top: 1px solid var(--line-soft); padding: 5px 6px; text-align: left; vertical-align: top; }
+.grid thead th { color: var(--muted); font-weight: 600; border-top: 0; white-space: nowrap; }
+.grid tbody th { font-weight: 600; white-space: nowrap; }
+.a-table tbody th { width: 150px; white-space: normal; }
+.grid td.cites { min-width: 180px; }
+.grid tr.group th { background: var(--accent-soft); color: var(--accent); }
+.grid tr.st-not_in_terms th, .grid tr.st-unverified th { color: var(--muted); font-weight: normal; }
+.table-scroll { overflow-x: auto; }
+.d-table { min-width: 860px; }
+.d-table td.after { min-width: 260px; }
+.pair { display: flex; gap: 4px; }
+.pair input { min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font-size: 13px; }
+.code-in { width: 96px; flex: none; font-variant-numeric: tabular-nums; }
+.name-in { flex: 1; }
+.pair input::placeholder { color: var(--muted); }
+.flags { max-width: 180px; }
+.flags .pill { margin: 1px 0; white-space: normal; }
+.note { font-size: 12px; margin-top: 2px; }
+.cite { margin-bottom: 4px; }
+.cite-loc { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cite-quote { font-family: var(--font-quote); font-size: 12.5px; color: var(--ink); margin-top: 1px; }
+.interp { margin-top: 4px; font-size: 12.5px; }
+.interp ul { margin: 2px 0 0; padding-left: 18px; }
+.review { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.b-list, .c-list { margin: 6px 0 0; padding-left: 18px; }
+.b-list li, .c-list li { margin-bottom: 8px; }
+.b-list p { margin: 2px 0; }
+.b-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.used { font-size: 12px; }
+.d-row h5 { margin: 10px 0 2px; font-size: 14px; }
+.split { margin: 2px 0; font-size: 13px; }

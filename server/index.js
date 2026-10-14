@@ -9,8 +9,13 @@ try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch { /* .env
 
 const store = require('./store');
 const jobs = require('./analyze/jobs');
-const { CATEGORIES } = require('./analyze/classify');
+const { CATEGORIES, applyOverrides } = require('./analyze/classify');
 const { docView } = require('./analyze/pipeline');
+const analysisJobs = require('./analyze/analysis-jobs');
+const { buildView, FLAG_TEXT } = require('./analyze/coverage');
+const { aiStatus } = require('./analyze/ai-client');
+const codemaster = require('./ecs/codemaster');
+const { FIELDS } = require('./ecs/fields');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 3000;
@@ -92,10 +97,19 @@ app.put('/api/docs/:id/review', (req, res) => {
   if (body.edits && typeof body.edits === 'object') next.edits = sanitizeEdits(body.edits);
   if (Array.isArray(body.added)) next.added = body.added.slice(0, 500).map(sanitizeAdded).filter(Boolean);
   if (Array.isArray(body.selected)) next.selected = body.selected.filter((s) => typeof s === 'string').slice(0, 5000);
+  if (body.reviewStatus && typeof body.reviewStatus === 'object') next.reviewStatus = sanitizeMap(body.reviewStatus, (v) => (v === 'done' ? 'done' : undefined));
+  if (body.fieldEdits && typeof body.fieldEdits === 'object') next.fieldEdits = sanitizeMap(body.fieldEdits, (v) => (v && typeof v === 'object' ? clean({ code: str(v.code, 40), name: str(v.name, 500) }) : undefined));
+  if (body.product && typeof body.product === 'object') next.product = clean({ productCode: str(body.product.productCode, 40), productName: str(body.product.productName, 200), saleDate: str(body.product.saleDate, 20) });
   store.writeReview(id, next);
   res.json({ ok: true, savedAt: store.readReview(id).savedAt });
 });
 
+const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, x]) => x !== undefined));
+function sanitizeMap(obj, fn) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj).slice(0, 20000)) { const x = fn(v); if (x !== undefined && typeof k === 'string' && k.length <= 200) out[k] = x; }
+  return out;
+}
 const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : undefined);
 function sanitizeEdits(edits) {
   const out = {};
@@ -111,6 +125,84 @@ function sanitizeAdded(a) {
   return { id: a.id, name: str(a.name), category: CATEGORIES.includes(a.category) ? a.category : '기타', group: str(a.group) || '직접 추가', reason: '사용자가 직접 추가한 담보입니다.', sectionId: str(a.sectionId, 20) || null, sectionTitle: str(a.sectionTitle) || null, evidence: null };
 }
 
+// 요청 본문을 그대로 읽습니다(코드마스터 엑셀 업로드용, 20MB 제한).
+function readBody(req, limit = 20 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error('파일이 너무 큽니다.'), { status: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+// 앱 설정 상태: AI 사용 가능 여부, 현재 코드마스터
+app.get('/api/config', (req, res) => {
+  res.json({ ai: aiStatus(), codemaster: codemaster.summary(analysisJobs.currentMaster()), fields: FIELDS, flagText: FLAG_TEXT });
+});
+
+// ───────────── 코드마스터 ─────────────
+app.get('/api/codemaster/download', async (req, res) => {
+  const m = analysisJobs.currentMaster();
+  const buf = await codemaster.toXlsx(m);
+  const name = m.provisional ? '임시_코드마스터.xlsx' : '코드마스터.xlsx';
+  res.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(Buffer.from(buf));
+});
+app.post('/api/codemaster', async (req, res) => {
+  const fileName = decodeURIComponent(req.get('x-file-name') || '코드마스터.xlsx');
+  const master = await codemaster.fromXlsx(await readBody(req), fileName);
+  store.writeMaster(master);
+  res.json(codemaster.summary(master));
+});
+app.delete('/api/codemaster', (req, res) => {
+  store.clearMaster();
+  res.json(codemaster.summary(analysisJobs.currentMaster()));
+});
+
+// ───────────── 담보 분석(2단계) ─────────────
+app.post('/api/docs/:id/analysis', (req, res) => {
+  const id = store.checkId(req.params.id);
+  if (!store.readCache(id, 'meta')) return res.status(404).json({ error: '문서가 없습니다.' });
+  const st = aiStatus();
+  if (!st.ready) return res.status(400).json({ error: st.message });
+  const ids = Array.isArray(req.body && req.body.coverageIds) ? req.body.coverageIds.filter((x) => typeof x === 'string').slice(0, 500) : [];
+  if (!ids.length) return res.status(400).json({ error: '분석할 담보를 선택해 주십시오.' });
+  res.json(analysisJobs.start(id, ids, { force: !!req.body.force }));
+});
+app.post('/api/docs/:id/analysis/stop', (req, res) => {
+  analysisJobs.stop(store.checkId(req.params.id));
+  res.json({ ok: true });
+});
+app.get('/api/docs/:id/analysis/events', (req, res) => {
+  const id = store.checkId(req.params.id);
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  res.flushHeaders();
+  const send = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
+  const job = analysisJobs.jobs.get(id);
+  if (!job) { send({ stage: 'idle' }); return res.end(); }
+  if (job.last) send(job.last);
+  if (job.done) { send({ stage: 'done', message: job.last ? job.last.message : '' }); return res.end(); }
+  const on = (ev) => { send(ev); if (ev.stage === 'done') res.end(); };
+  job.emitter.on('progress', on);
+  req.on('close', () => job.emitter.off('progress', on));
+});
+// 분석 결과(화면용). 코드 검사는 현재 코드마스터 기준으로 매번 다시 합니다.
+app.get('/api/docs/:id/analysis', (req, res) => {
+  const id = store.checkId(req.params.id);
+  const review = store.readReview(id);
+  const coverages = applyOverrides(store.readCache(id, 'coverages') || [], review);
+  const master = analysisJobs.currentMaster();
+  const out = {};
+  for (const stored of store.listAnalyses(id)) {
+    const c = coverages.find((x) => x.id === stored.coverageId);
+    if (!c) continue;
+    out[c.id] = stored.verified ? { ...buildView(stored, c, master, review), lastError: stored.lastError || null } : { error: stored.lastError || '분석 결과가 없습니다.' };
+  }
+  const job = analysisJobs.jobs.get(id);
+  res.json({ results: out, running: !!(job && !job.done), states: job ? job.states : {} });
+});
+
 // 원본 PDF(3단계 뷰어용)
 app.get('/api/docs/:id/pdf', (req, res) => {
   const file = store.pdfPath(req.params.id);
@@ -119,7 +211,7 @@ app.get('/api/docs/:id/pdf', (req, res) => {
 });
 
 app.use((err, req, res, _next) => {
-  console.error(err);
+  if (!err.status || err.status >= 500) console.error(err);
   res.status(err.status || 500).json({ error: err.message });
 });
 

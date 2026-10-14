@@ -16,6 +16,8 @@ if not exist node_modules (
     exit /b 1
   )
 )
+rem 사내 프록시(HTTPS_PROXY)가 설정된 PC 에서는 Claude API 호출도 프록시를 거치게 합니다.
+if defined HTTPS_PROXY set NODE_USE_ENV_PROXY=1
 start "" http://localhost:3000
 node server\index.js
 pause
