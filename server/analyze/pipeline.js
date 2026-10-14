@@ -3,7 +3,7 @@ const { findToc, bodyStream, splitSections, matchToc, locateTocEntries, cleanTit
 const { extractCoverages, applyOverrides, categorize, CATEGORIES } = require('./classify');
 
 // 추출 규칙을 고치면 이 값을 올립니다. 값이 다른 캐시는 다시 분석합니다(사용자 수정·검토 기록은 별도로 저장되어 유지됩니다).
-const STRUCTURE_VERSION = 'structure-4';
+const STRUCTURE_VERSION = 'structure-5';
 
 // onStep(done, total, message) 로 진행 단계를 알립니다.
 // options.tocPages: 사용자가 지정한 목차 쪽 번호 목록(없으면 자동으로 찾음)

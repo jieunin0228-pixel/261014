@@ -325,3 +325,17 @@ test('서버: 목차 쪽 지정 → 저장된 추출 결과로 다시 분석 →
     server.close();
   }
 });
+
+test('띄어 쓴 담보명·표 안의 담보명·줄 끝에서 낱말 중간이 끊긴 담보명을 찾는다', async () => {
+  const { analyzeStructure } = require('../server/analyze/pipeline');
+  const { findBenefits } = require('../server/analyze/classify');
+  const { pages: p6 } = await extractPdf(fs.readFileSync(path.join(__dirname, 'fixtures', 'spaced-names-policy.pdf')));
+  const { coverages: covs } = analyzeStructure(p6);
+  assert.deepEqual(covs.map((c) => `${c.name}/${c.category}`), ['뇌졸중 진단비/진단', '뇌혈관질환진단비/진단', '대상포진 진단비/진단', '뇌동맥류 진단비/진단']);
+  // 문장 속 낱말은 이름에 붙이지 않습니다.
+  assert.deepEqual(findBenefits('회사는 다음의 암 진단비(유사암 제외)를 지급합니다.'), ['암 진단비(유사암 제외)']);
+  assert.deepEqual(findBenefits('회사는 매년 생활자금을 지급합니다'), ['생활자금']);
+  assert.deepEqual(findBenefits('입원일수 1일당 가입금액의 1%'), []);
+  assert.deepEqual(findBenefits('회사는 약정한 보험금을 지급합니다. 해당 진단비를 지급합니다'), []);
+  assert.deepEqual(findBenefits('고도장해보험금과 사망보험금을 지급합니다'), ['고도장해보험금', '사망보험금']);
+});

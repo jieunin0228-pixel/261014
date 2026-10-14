@@ -60,6 +60,24 @@ const toc = [['무배당 목차건강보험 보통약관', 1], ['무배당 암�
     .hd { font-size: 8pt; border-bottom: 0.5pt solid #999; margin-bottom: 4mm; } .bd { flex: 1; } .ft { text-align: center; font-size: 9pt; }
   </style></head><body>${html2}</body></html>`);
   await page.pdf({ path: path.join(__dirname, '..', 'test', 'fixtures', 'toc-listed-policy.pdf'), preferCSSPageSize: true });
+
+  // 세 번째(spaced-names-policy.pdf): 띄어 쓴 담보명, 표 안의 담보명, 줄 끝에서 낱말 중간이 끊긴 담보명
+  const body3 = [[
+    '무배당 뇌질환보장특약', '', '제1조(목적)', '이 특약은 피보험자의 뇌질환 위험을 보장하기 위하여 체결됩니다.',
+    '제2조(보험금의 지급사유)', '회사는 피보험자에게 다음 중 어느 하나의 사유가 발생한 경우 보험금을 지급합니다.',
+    '1. 피보험자가 뇌졸중으로 진단확정된 경우 : 뇌졸중 진단비',
+    '2. 피보험자가 보험기간 중 뇌혈관질환으로 진단확정된 경우(최초 1회한) : 뇌혈관질환진',
+    '단비',
+    '3. 피보험자가 대상포진으로 진단확정된 경우 : 대상포진 진단비',
+    '제3조(보험금의 지급금액)', '지급구분 | 지급사유 | 지급금액', '뇌동맥류 진단비 | 뇌동맥류로 진단확정 시 | 가입금액', '제4조(준용규정)', ...filler(4),
+  ]];
+  await page.setContent(`<html><head><style>
+    @page { size: A4; margin: 0; }
+    body { margin: 0; font: 10pt/15pt 'WenQuanYi Zen Hei', 'Noto Sans CJK KR', sans-serif; }
+    .page { width: 210mm; height: 297mm; padding: 12mm 18mm; box-sizing: border-box; page-break-after: always; display: flex; flex-direction: column; overflow: hidden; }
+    .hd { font-size: 8pt; border-bottom: 0.5pt solid #999; margin-bottom: 4mm; } .bd { flex: 1; } .ft { text-align: center; font-size: 9pt; }
+  </style></head><body>${body3.map((lines, i) => pageHtml(lines, i + 1)).join('')}</body></html>`);
+  await page.pdf({ path: path.join(__dirname, '..', 'test', 'fixtures', 'spaced-names-policy.pdf'), preferCSSPageSize: true });
   await browser.close();
-  console.log('test/fixtures/toc-variant-policy.pdf, toc-listed-policy.pdf 생성');
+  console.log('test/fixtures/toc-variant-policy.pdf, toc-listed-policy.pdf, spaced-names-policy.pdf 생성');
 })();
